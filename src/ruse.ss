@@ -29,7 +29,6 @@
 
 ; Initialize the environment.
 (define global-env '())
-(ruse-global-macro '(if @c @t @f) '(cond (c t) (else f)))
 (ruse-global-rule 'tag '(quote tag))
 (ruse-global-rule '(tag @t @v) '(builtin list t v))
 (ruse-global-rule 'multiply-int '(quote multiply-int))
@@ -56,6 +55,9 @@
 		; Handle rule definitions.
 		((and (list? expr) (eqv? (car expr) '=))
 		 (ruse-eval-rule-def-tail expr env on-scs on-fail on-err))
+		; Handle macro definitions.
+		((and (list? expr) (eqv? (car expr) '=*))
+		 (ruse-eval-macro-def-tail expr env on-scs on-fail on-err))
 		; Handle integer literals.
 		((integer? expr) (ruse-eval-integer-tail expr env on-scs on-fail on-err))
 		; Handle tokens.
@@ -110,12 +112,9 @@
 				(define (on-arg-scs val new-env) (set! rslt val))
 				(ruse-eval-tail arg env on-arg-scs on-arg-fail on-err)
 				(list 'quote rslt)))
-		(printf "ruse-eval-builtin-tail ~a~n" fm)
 		(let* ((val-fm (map eval-arg (cdr fm)))
 					 (bi-expr (cons (car fm) val-fm)))
-			(printf "  builtin expr: ~a~n" bi-expr)
 			(let ((bi-rslt (eval bi-expr eval-ns)))
-				(printf "   builtin rslt: ~a~n" bi-rslt)
 				(on-scs bi-rslt env)))))
 
 ; Evaluate dynamic form.
@@ -125,25 +124,19 @@
 
 ; Evaluate conditional expression.
 (define (ruse-eval-cond-tail expr env on-scs on-fail on-err)
-	(printf "ruse-eval-cond-tail~n")
 	(when (not (list? (cadr expr))) (on-err "cond arguments not list."))
 	(let eval-cond ((cnd-pairs (cdr expr)))
 		(if (null? cnd-pairs)
-			(begin (printf "cnd-pairs exhausted.~n") (on-fail))
+			(on-fail)
 			(let* ((cnd-pair (car cnd-pairs))
 						 (cnd (car cnd-pair))
 						 (rslt (cadr cnd-pair)))
 				(define (on-cond-scs cnd-val cond-env)
-					(printf "on-cond-scs cnd-val=~a rslt=~a~n" cnd-val rslt)
 					(if cnd-val
-						(ruse-eval-tail rslt env
-														(lambda (nval nenv)
-															(printf "cond eval rslt=~a~n" nval)
-															(on-scs nval nenv)) on-fail on-err)
+						(ruse-eval-tail rslt env (lambda (nval nenv) (on-scs nval nenv)) on-fail on-err)
 						(eval-cond (cdr cnd-pairs))))
-				(printf "  cond: cnd=~a~n" cnd)
 				(if (eq? cnd 'else)
-					(begin (printf "else (~a)~n" rslt) (ruse-eval-tail rslt env on-scs on-fail on-err))
+					(ruse-eval-tail rslt env on-scs on-fail on-err)
 					(ruse-eval-tail cnd env on-cond-scs (lambda () (eval-cond (cdr cnd-pairs))) on-err))))))
 
 ; Return anything that's quoted.
@@ -212,7 +205,6 @@
 				 (body (cdr templ))
 				 (on-match-scs
 					 (lambda (bdngs)
-						 (printf "apply-macro on-match-scs ptn=~a bdngs=~a~n" ptn bdngs)
 						 ; Perform a typographical replacement of all variables mentioned
 						 ; in the pattern in the body of the macro.
 						 (let ((expnsn 
@@ -233,10 +225,8 @@
 														bdng-rplc
 														(check-bindings (cdr cur-bdngs)))))))
 									 (else sub-ptn)))))
-							 (printf "  macro expansion: ~a~n" expnsn)
 							 (on-scs expnsn mac-env)))))
 		; Using the handlers we have defined, attempt to match the pattern.
-		(printf "apply-macro ptn=~a~n" ptn)
 		(match-ptn ptn fm '() on-match-scs on-fail)))
 
 ; Accessor functions for bindings.
@@ -294,7 +284,6 @@
 	; evaluate the arguments and try to apply rules.
 	(define (apply-macros on-macro-fail)
 		(define (on-macro-scs val mac-env)
-			(printf "on-macro-scs val=~a~n" val)
 			(ruse-eval-tail val env on-scs on-fail on-err))
 		(apply-env-macros-to-expr expr env on-macro-scs on-macro-fail on-err))
 	; Try to apply rules from the environment to the form.
@@ -331,12 +320,42 @@
 	; Return a pair consisting of the compiled pattern and the compiled body.
 	(cons (compile-pattern (car rl)) (compile-body (cadr rl))))
 
+; Compile a macro definition into an internal format.
+(define (compile-macro-def mac)
+	; Function for converting the pattern.
+	(define (compile-pattern ptn)
+		(let recurse ((fm ptn))
+			(cond
+				; Handle symbols.
+				((symbol? fm) fm)
+				; Handle forms.
+				((list? fm) (list-ec (: x fm) (recurse x)))
+				((integer? fm) fm))))
+	(define (compile-body bd)
+		(let recurse ((fm bd))
+			(cond
+				; Handle symbols.
+				((symbol? fm) fm)
+				; Handle forms.
+				((list? fm) (list-ec (: x fm) (recurse x)))
+				((integer? fm) fm))))
+	; Return a pair consisting of the compiled pattern and the compiled body.
+	(cons (compile-pattern (car mac)) (compile-body (cadr mac))))
+
 ; Evaluate a rule definition (add it to the environment).
 (define (ruse-eval-rule-def-tail expr env on-scs on-fail on-err)
 	(let ((rl-tpl (compile-rule-def (cdr expr))))
 		(if rl-tpl
 			(let ((rl (cons rl-tpl env)))
 				(on-scs rl (cons (cons 'rule rl) env)))
+			(on-fail))))
+
+; Evaluate a macro definition (add it to the environment).
+(define (ruse-eval-macro-def-tail expr env on-scs on-fail on-err)
+	(let ((mac-tpl (compile-macro-def (cdr expr))))
+		(if mac-tpl
+			(let ((mac (cons mac-tpl env)))
+				(on-scs mac (cons (cons 'macro mac) env)))
 			(on-fail))))
 
 ; Execute a given file.
