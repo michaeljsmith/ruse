@@ -1,0 +1,20 @@
+; Test script for ruse.
+
+(= multiply (quote multiply))
+
+(= (multiply (int @x) (int @y))
+	 (multiply-int x x))
+
+(= square (quote square))
+
+(= (square (@t @x))
+	 (multiply (t x) (t x)))
+
+;(square (int 8))
+;(cond
+;	((builtin eq? 'dog 'dog) (int 1))
+;	(else (int 0)))
+
+(if (builtin eq? 1 2)
+	(int 1)
+	(int 0))
