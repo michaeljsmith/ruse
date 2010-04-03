@@ -387,7 +387,7 @@
 							(on-err (format "File contained errors (~a)." errors))
 							(on-scs rslt file-env))
 						(ruse-eval-tail fm file-env on-eval-scs on-eval-fail on-err)))))
-		(call-with-input-file "test.ruse" load-from-port)))
+		(call-with-input-file f load-from-port)))
 
 ; Top level file execution function.
 (define (ruse-load-files fs)
