@@ -1,0 +1,9 @@
+Scheme implementation of Ruse, a simple interpreted language based on
+substitution rules. Evaluating an expression involves checking the expression
+against a database of rules. Each rule specifies a pattern that must be
+matched, and an expression specifying the result if the match is made. Pattern
+matching can involve binding parts of the expression to variable names, which
+can be referred to in the result
+
+Tested under:
+MzScheme v4.1.5 (Ubuntu Linux 9.10)
