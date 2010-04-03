@@ -137,12 +137,9 @@
 				(define (on-arg-scs val new-env) (set! rslt val))
 				(ruse-eval-tail arg env on-arg-scs on-arg-fail on-err)
 				(list 'quote rslt)))
-		(printf "ruse-eval-builtin-tail ~a~n" fm)
 		(let* ((val-fm (map eval-arg (cdr fm)))
 					 (bi-expr (cons (car fm) val-fm)))
-			(printf "  builtin expr: ~a~n" bi-expr)
 			(let ((bi-rslt (eval bi-expr eval-ns)))
-				(printf "   builtin rslt: ~a~n" bi-rslt)
 				(on-scs bi-rslt env)))))
 
 ; Evaluate dynamic form.
@@ -152,25 +149,21 @@
 
 ; Evaluate conditional expression.
 (define (ruse-eval-cond-tail expr env on-scs on-fail on-err)
-	(printf "ruse-eval-cond-tail~n")
 	(when (not (list? (cadr expr))) (on-err "cond arguments not list."))
 	(let eval-cond ((cnd-pairs (cdr expr)))
 		(if (null? cnd-pairs)
-			(begin (printf "cnd-pairs exhausted.~n") (on-fail))
+			(on-fail)
 			(let* ((cnd-pair (car cnd-pairs))
 						 (cnd (car cnd-pair))
 						 (rslt (cadr cnd-pair)))
 				(define (on-cond-scs cnd-val cond-env)
-					(printf "on-cond-scs cnd-val=~a rslt=~a~n" cnd-val rslt)
 					(if cnd-val
 						(ruse-eval-tail rslt env
 														(lambda (nval nenv)
-															(printf "cond eval rslt=~a~n" nval)
 															(on-scs nval nenv)) on-fail on-err)
 						(eval-cond (cdr cnd-pairs))))
-				(printf "  cond: cnd=~a~n" cnd)
 				(if (eq? cnd 'else)
-					(begin (printf "else (~a)~n" rslt) (ruse-eval-tail rslt env on-scs on-fail on-err))
+					(ruse-eval-tail rslt env on-scs on-fail on-err)
 					(ruse-eval-tail cnd env on-cond-scs (lambda () (eval-cond (cdr cnd-pairs))) on-err))))))
 
 ; Return anything that's quoted.
@@ -239,7 +232,6 @@
 				 (body (cdr templ))
 				 (on-match-scs
 					 (lambda (bdngs)
-						 (printf "apply-macro on-match-scs ptn=~a bdngs=~a~n" ptn bdngs)
 						 ; Perform a typographical replacement of all variables mentioned
 						 ; in the pattern in the body of the macro.
 						 (let ((expnsn 
@@ -260,10 +252,8 @@
 														bdng-rplc
 														(check-bindings (cdr cur-bdngs)))))))
 									 (else sub-ptn)))))
-							 (printf "  macro expansion: ~a~n" expnsn)
 							 (on-scs expnsn mac-env)))))
 		; Using the handlers we have defined, attempt to match the pattern.
-		(printf "apply-macro ptn=~a~n" ptn)
 		(match-ptn ptn fm '() on-match-scs on-fail)))
 
 ; Accessor functions for bindings.
@@ -321,7 +311,6 @@
 	; evaluate the arguments and try to apply rules.
 	(define (apply-macros on-macro-fail)
 		(define (on-macro-scs val mac-env)
-			(printf "on-macro-scs val=~a~n" val)
 			(ruse-eval-tail val env on-scs on-fail on-err))
 		(apply-env-macros-to-expr expr env on-macro-scs on-macro-fail on-err))
 	; Try to apply rules from the environment to the form.
