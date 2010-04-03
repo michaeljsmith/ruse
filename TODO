@@ -1,0 +1,5 @@
+TODO:
+* Implement eval builtin.
+* Refactor eval pipeline to use expand/recurse-eval.
+* Implement placeholders.
+* Error reporting.

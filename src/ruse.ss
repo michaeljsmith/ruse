@@ -12,11 +12,6 @@
 ;  Tested under:
 ;  MzScheme v4.1.5 (Ubuntu Linux 9.10)
 ;
-;  TODO:
-;  * Implement macros.
-;  * Implement placeholders.
-;  * Error reporting.
-;
 ;
 ;  Copyright (c) 2010 Michael Smith <msmith@msmith.id.au>
 ;
