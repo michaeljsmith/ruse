@@ -60,34 +60,41 @@
 
 ; Main evaluate function.
 (define (ruse-eval-tail expr env on-scs on-fail on-err)
-	; Check whether the expression is a rule definition.
-	(cond
-		; Handle quotes.
-		((and (list? expr) (eqv? (car expr) 'quote))
-		 (ruse-eval-quote-tail expr env on-scs on-fail on-err))
-		; Handle requests to evaluate form as a scheme form.
-		((and (list? expr) (eqv? (car expr) 'builtin))
-		 (ruse-eval-builtin-tail expr env on-scs on-fail on-err))
-		; Handle requests to evaluate dynamic form.
-		((and (list? expr) (eqv? (car expr) 'eval))
-		 (ruse-eval-eval-tail expr env on-scs on-fail on-err))
-		; Handle conditional requests.
-		((and (list? expr) (eqv? (car expr) 'cond))
-		 (ruse-eval-cond-tail expr env on-scs on-fail on-err))
-		; Handle rule definitions.
-		((and (list? expr) (eqv? (car expr) '=))
-		 (ruse-eval-rule-def-tail expr env on-scs on-fail on-err))
-		; Handle macro definitions.
-		((and (list? expr) (eqv? (car expr) '=*))
-		 (ruse-eval-macro-def-tail expr env on-scs on-fail on-err))
-		; Handle integer literals.
-		((integer? expr) (ruse-eval-integer-tail expr env on-scs on-fail on-err))
-		; Handle tokens.
-		((symbol? expr) (ruse-eval-symbol-tail expr env on-scs on-fail on-err))
-		; Handle forms.
-		((list? expr) (ruse-eval-form-tail expr env on-scs on-fail on-err))
-		; Everything has failed.
-		(else (ruse-eval-unknown-tail expr env on-scs on-fail on-err))))
+	(define (eval expr env on-scs on-fail on-err)
+		(check-quote expr env on-scs on-fail on-err))
+	(define (check-quote expr env on-scs on-fail on-err)
+		(if (and (list? expr) (eqv? (car expr) 'quote))
+			(on-scs (cadr expr) env)
+			(expand-rules expr env on-scs on-fail on-err)))
+	(define (expand-rules expr env on-scs on-fail on-err)
+		(eval-base expr env on-scs on-fail on-err))
+	(define (eval-base expr env on-scs on-fail on-err)
+		; Check whether the expression is a rule definition.
+		(cond
+			; Handle requests to evaluate form as a scheme form.
+			((and (list? expr) (eqv? (car expr) 'builtin))
+			 (ruse-eval-builtin-tail expr env on-scs on-fail on-err))
+			; Handle requests to evaluate dynamic form.
+			((and (list? expr) (eqv? (car expr) 'eval))
+			 (ruse-eval-eval-tail expr env on-scs on-fail on-err))
+			; Handle conditional requests.
+			((and (list? expr) (eqv? (car expr) 'cond))
+			 (ruse-eval-cond-tail expr env on-scs on-fail on-err))
+			; Handle rule definitions.
+			((and (list? expr) (eqv? (car expr) '=))
+			 (ruse-eval-rule-def-tail expr env on-scs on-fail on-err))
+			; Handle macro definitions.
+			((and (list? expr) (eqv? (car expr) '=*))
+			 (ruse-eval-macro-def-tail expr env on-scs on-fail on-err))
+			; Handle integer literals.
+			((integer? expr) (ruse-eval-integer-tail expr env on-scs on-fail on-err))
+			; Handle tokens.
+			((symbol? expr) (ruse-eval-symbol-tail expr env on-scs on-fail on-err))
+			; Handle forms.
+			((list? expr) (ruse-eval-form-tail expr env on-scs on-fail on-err))
+			; Everything has failed.
+			(else (ruse-eval-unknown-tail expr env on-scs on-fail on-err))))
+	(eval expr env on-scs on-fail on-err))
 
 ; Simple eval function.
 (define (ruse-eval expr env on-err)
