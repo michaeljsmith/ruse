@@ -86,7 +86,7 @@
 		((symbol? expr) (ruse-eval-symbol-tail expr env on-scs on-fail on-err))
 		; Handle forms.
 		((list? expr) (ruse-eval-form-tail expr env on-scs on-fail on-err))
-		; Handle type-value pairs.
+		; Everything has failed.
 		(else (ruse-eval-unknown-tail expr env on-scs on-fail on-err))))
 
 ; Simple eval function.
