@@ -59,7 +59,7 @@
 (ruse-global-rule '(multiply-int @x @y) '(int (builtin * x y)))
 
 ; Main evaluate function.
-(define (ruse-eval-tail expr env on-scs on-fail on-err)
+(define (ruse-eval expr env on-scs on-fail on-err)
 	(define (eval expr env on-scs on-fail on-err)
 		(check-quote expr env on-scs on-fail on-err))
 	(define (check-quote expr env on-scs on-fail on-err)
@@ -94,11 +94,13 @@
 			((integer? expr) (ruse-eval-integer-tail expr env on-scs on-fail on-err))
 			(else (expand-rules expr env on-scs on-fail on-err))))
 	(define (expand-rules expr env on-scs on-fail on-err)
+		(define (on-rule-scs new-expr new-env)
+			(eval new-expr new-env on-scs on-fail on-err))
 		(define (on-rule-fail)
 			(fail expr env on-scs on-fail on-err))
 		(cond
 			((symbol? expr)
-			 (apply-env-to-expr expr env on-scs on-rule-fail on-err))
+			 (apply-env-to-expr expr env on-rule-scs on-rule-fail on-err))
 			((list? expr)
 			 (begin
 				 (let* ((sub-eval (lambda (sub)
@@ -107,25 +109,11 @@
 														 (define (on-eval val expr) (return val))
 														 (eval sub env on-eval on-rule-fail on-err))))
 								(fm-exp (map sub-eval expr)))
-						 (apply-env-to-expr fm-exp env on-scs on-fail on-err))))
+						 (apply-env-to-expr fm-exp env on-rule-scs on-fail on-err))))
 			(else (fail expr env on-scs on-fail on-err))))
 	(define (fail expr env on-scs on-fail on-err)
 		((ruse-eval-unknown-tail expr env on-scs on-fail on-err)))
 	(eval expr env on-scs on-fail on-err))
-
-; Simple eval function.
-(define (ruse-eval expr env on-err)
-	; Define exit point.
-	(let/cc
-		return
-		; Define action for success.
-		(define (on-scs val env)
-			(return val))
-		; Define action for failure.
-		(define (on-fail)
-			(return #f))
-		; Evaluate expression.
-		(ruse-eval-tail expr env on-scs on-fail on-err)))
 
 ; Front-end evaluate function.
 (define (ruse-eval-top-level expr)
@@ -145,7 +133,7 @@
 			(printf "Error while evaluating ~a~n" expr)
 			(return #f))
 		; Evaluate expression.
-			(ruse-eval-tail expr global-env on-scs on-fail on-err)))
+			(ruse-eval expr global-env on-scs on-fail on-err)))
 
 ; Evaluate using Scheme.
 (define-namespace-anchor ns-anchor)
@@ -156,7 +144,7 @@
 			(define (on-arg-fail) (on-err (format "Builtin eval failed to evaluate argument ~a." arg)))
 			(let ((rslt #f))
 				(define (on-arg-scs val new-env) (set! rslt val))
-				(ruse-eval-tail arg env on-arg-scs on-arg-fail on-err)
+				(ruse-eval arg env on-arg-scs on-arg-fail on-err)
 				(list 'quote rslt)))
 		(let* ((val-fm (map eval-arg (cdr fm)))
 					 (bi-expr (cons (car fm) val-fm)))
@@ -166,7 +154,7 @@
 ; Evaluate dynamic form.
 (define (ruse-eval-eval-tail expr env on-scs on-fail on-err)
 	(let ((fm (cadr expr)))
-		(ruse-eval-tail fm env on-scs on-fail on-err)))
+		(ruse-eval fm env on-scs on-fail on-err)))
 
 ; Evaluate conditional expression.
 (define (ruse-eval-cond-tail expr env on-scs on-fail on-err)
@@ -179,11 +167,11 @@
 						 (rslt (cadr cnd-pair)))
 				(define (on-cond-scs cnd-val cond-env)
 					(if cnd-val
-						(ruse-eval-tail rslt env (lambda (nval nenv) (on-scs nval nenv)) on-fail on-err)
+						(ruse-eval rslt env (lambda (nval nenv) (on-scs nval nenv)) on-fail on-err)
 						(eval-cond (cdr cnd-pairs))))
 				(if (eq? cnd 'else)
-					(ruse-eval-tail rslt env on-scs on-fail on-err)
-					(ruse-eval-tail cnd env on-cond-scs (lambda () (eval-cond (cdr cnd-pairs))) on-err))))))
+					(ruse-eval rslt env on-scs on-fail on-err)
+					(ruse-eval cnd env on-cond-scs (lambda () (eval-cond (cdr cnd-pairs))) on-err))))))
 
 ; Return anything that's quoted.
 (define (ruse-eval-quote-tail expr env on-scs on-fail on-err)
@@ -233,12 +221,7 @@
 							 ; Add all the bindings from the match to the environment.
 							 (do-ec (: bdng bdngs)
 											(set! new-env (cons `(rule (,(car bdng) . (quote ,(cdr bdng))) ()) new-env)))
-							 ; Now that we have applied the rule, check whether it can now have a
-							 ; rule applied to it.
-							 (let ((sub (ruse-eval body new-env on-err)))
-								 (if sub
-									 (on-scs sub env)
-									 (on-err (format "Failed to evaluate replacement expression ~a." body))))))))
+							 (on-scs body new-env)))))
 		; Using the handlers we have defined, attempt to match the pattern.
 		(match-ptn ptn expr '() on-match-scs on-fail)))
 
@@ -318,18 +301,6 @@
 										on-err))
 			; If the env entry is not a rule, skip it.
 			(else (recurse (cdr cur-env))))))
-
-; Evaluation function for simple symbols.
-(define (ruse-eval-symbol-tail expr env on-scs on-fail on-err)
-	; Try all the rules on the form.
-	(apply-env-to-expr expr env on-scs on-fail on-err))
-
-; Evaluate a form using a given environment.
-(define (ruse-eval-form-tail expr env on-scs on-fail on-err)
-	; Evaluate all the elements of the form.
-	(let ((fm-exp (list-ec (: x expr) (ruse-eval x env on-err))))
-		; Try all the rules on the form.
-		(apply-env-to-expr fm-exp env on-scs on-fail on-err)))
 
 ; Handle completely unexpected value.
 (define (ruse-eval-unknown-tail expr env on-scs on-fail on-err)
@@ -415,7 +386,7 @@
 						(if (> errors 0)
 							(on-err (format "File contained errors (~a)." errors))
 							(on-scs rslt file-env))
-						(ruse-eval-tail fm file-env on-eval-scs on-eval-fail on-err)))))
+						(ruse-eval fm file-env on-eval-scs on-eval-fail on-err)))))
 		(call-with-input-file f load-from-port)))
 
 ; Top level file execution function.
