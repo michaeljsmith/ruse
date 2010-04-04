@@ -94,9 +94,20 @@
 			((integer? expr) (ruse-eval-integer-tail expr env on-scs on-fail on-err))
 			(else (expand-rules expr env on-scs on-fail on-err))))
 	(define (expand-rules expr env on-scs on-fail on-err)
+		(define (on-rule-fail)
+			(fail expr env on-scs on-fail on-err))
 		(cond
-			((symbol? expr) (ruse-eval-symbol-tail expr env on-scs on-fail on-err))
-			((list? expr) (ruse-eval-form-tail expr env on-scs on-fail on-err))
+			((symbol? expr)
+			 (apply-env-to-expr expr env on-scs on-rule-fail on-err))
+			((list? expr)
+			 (begin
+				 (let* ((sub-eval (lambda (sub)
+													 (let/cc
+														 return
+														 (define (on-eval val expr) (return val))
+														 (eval sub env on-eval on-rule-fail on-err))))
+								(fm-exp (map sub-eval expr)))
+						 (apply-env-to-expr fm-exp env on-scs on-fail on-err))))
 			(else (fail expr env on-scs on-fail on-err))))
 	(define (fail expr env on-scs on-fail on-err)
 		((ruse-eval-unknown-tail expr env on-scs on-fail on-err)))
