@@ -65,9 +65,15 @@
 	(define (check-quote expr env on-scs on-fail on-err)
 		(if (and (list? expr) (eqv? (car expr) 'quote))
 			(on-scs (cadr expr) env)
-			(expand-rules expr env on-scs on-fail on-err)))
+			(expand-macros expr env on-scs on-fail on-err)))
+	(define (expand-macros expr env on-scs on-fail on-err)
+		(define (on-mac-scs val mac-env)
+			(eval val env on-scs on-fail on-err))
+		(define (on-mac-fail)
+			(expand-rules expr env on-scs on-fail on-err))
+		(apply-env-macros-to-expr expr env on-mac-scs on-mac-fail on-err))
 	(define (expand-rules expr env on-scs on-fail on-err)
-		(eval-base expr env on-scs on-fail on-err))
+			(eval-base expr env on-scs on-fail on-err))
 	(define (eval-base expr env on-scs on-fail on-err)
 		; Check whether the expression is a rule definition.
 		(cond
@@ -310,7 +316,7 @@
 ; Evaluate a form using a given environment.
 (define (ruse-eval-form-tail expr env on-scs on-fail on-err)
 	; Try to apply macros from the environment to the unevaluated form. If this fails,
-	; evaluate the arguments and try to apply rules.
+	; Evaluate the arguments and try to apply rules.
 	(define (apply-macros on-macro-fail)
 		(define (on-macro-scs val mac-env)
 			(ruse-eval-tail val env on-scs on-fail on-err))
