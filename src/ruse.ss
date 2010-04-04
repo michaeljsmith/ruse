@@ -70,10 +70,8 @@
 		(define (on-mac-scs val mac-env)
 			(eval val env on-scs on-fail on-err))
 		(define (on-mac-fail)
-			(expand-rules expr env on-scs on-fail on-err))
-		(apply-env-macros-to-expr expr env on-mac-scs on-mac-fail on-err))
-	(define (expand-rules expr env on-scs on-fail on-err)
 			(eval-base expr env on-scs on-fail on-err))
+		(apply-env-macros-to-expr expr env on-mac-scs on-mac-fail on-err))
 	(define (eval-base expr env on-scs on-fail on-err)
 		; Check whether the expression is a rule definition.
 		(cond
@@ -94,12 +92,14 @@
 			 (ruse-eval-macro-def-tail expr env on-scs on-fail on-err))
 			; Handle integer literals.
 			((integer? expr) (ruse-eval-integer-tail expr env on-scs on-fail on-err))
-			; Handle tokens.
+			(else (expand-rules expr env on-scs on-fail on-err))))
+	(define (expand-rules expr env on-scs on-fail on-err)
+		(cond
 			((symbol? expr) (ruse-eval-symbol-tail expr env on-scs on-fail on-err))
-			; Handle forms.
 			((list? expr) (ruse-eval-form-tail expr env on-scs on-fail on-err))
-			; Everything has failed.
-			(else (ruse-eval-unknown-tail expr env on-scs on-fail on-err))))
+			(else (fail expr env on-scs on-fail on-err))))
+	(define (fail expr env on-scs on-fail on-err)
+		((ruse-eval-unknown-tail expr env on-scs on-fail on-err)))
 	(eval expr env on-scs on-fail on-err))
 
 ; Simple eval function.
@@ -315,19 +315,10 @@
 
 ; Evaluate a form using a given environment.
 (define (ruse-eval-form-tail expr env on-scs on-fail on-err)
-	; Try to apply macros from the environment to the unevaluated form. If this fails,
-	; Evaluate the arguments and try to apply rules.
-	(define (apply-macros on-macro-fail)
-		(define (on-macro-scs val mac-env)
-			(ruse-eval-tail val env on-scs on-fail on-err))
-		(apply-env-macros-to-expr expr env on-macro-scs on-macro-fail on-err))
-	; Try to apply rules from the environment to the form.
-	(define (apply-rules)
-		; Evaluate all the elements of the form.
-		(let ((fm-exp (list-ec (: x expr) (ruse-eval x env on-err))))
-			; Try all the rules on the form.
-			(apply-env-to-expr fm-exp env on-scs on-fail on-err)))
-	(apply-macros apply-rules))
+	; Evaluate all the elements of the form.
+	(let ((fm-exp (list-ec (: x expr) (ruse-eval x env on-err))))
+		; Try all the rules on the form.
+		(apply-env-to-expr fm-exp env on-scs on-fail on-err)))
 
 ; Handle completely unexpected value.
 (define (ruse-eval-unknown-tail expr env on-scs on-fail on-err)
