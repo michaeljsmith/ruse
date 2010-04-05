@@ -18,6 +18,8 @@
 (=* (if @c @t @f)
 		(cond (c t) (else f)))
 
-(if (builtin eq? 1 1)
-	(int 1)
-	(int 0))
+;(if (builtin eq? 1 1)
+;	(int 1)
+;	(int 0))
+
+(apply-rules square (int 5))

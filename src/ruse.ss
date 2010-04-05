@@ -52,6 +52,7 @@
 ; Initialize the environment.
 (define global-env '())
 (ruse-global-rule 'tag '(quote tag))
+(ruse-global-rule 'apply-rules '(quote apply-rules))
 (ruse-global-rule '(tag @t @v) '(builtin list t v))
 (ruse-global-rule 'multiply-int '(quote multiply-int))
 (ruse-global-rule 'int '(quote int))
