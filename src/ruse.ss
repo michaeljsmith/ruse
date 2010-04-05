@@ -60,22 +60,32 @@
 
 ; Main evaluate function.
 (define (ruse-eval expr env on-scs on-fail on-err)
+
+	; Primary evaluation function.
 	(define (eval expr env on-scs on-fail on-err)
 		(check-quote expr env on-scs on-fail on-err))
+
+	; Check whether expression is quoted, if so return the value.
 	(define (check-quote expr env on-scs on-fail on-err)
 		(if (and (list? expr) (eqv? (car expr) 'quote))
 			(on-scs (cadr expr) env)
 			(expand-macros expr env on-scs on-fail on-err)))
+
+	; Try to expand any macros before continuing.
 	(define (expand-macros expr env on-scs on-fail on-err)
 		(define (on-mac-scs val mac-env)
 			(eval val env on-scs on-fail on-err))
 		(define (on-mac-fail)
 			(eval-base expr env on-scs on-fail on-err))
 		(apply-env-macros-to-expr expr env on-mac-scs on-mac-fail on-err))
+
+	; Evalute any core functions (eg builtin functions).
 	(define (eval-base expr env on-scs on-fail on-err)
 		(define (on-base-fail)
 			(expand-rules expr env on-scs on-fail on-err))
 		(ruse-eval-base expr env on-scs on-base-fail on-err))
+
+	; Apply any rules that match the current expression.
 	(define (expand-rules expr env on-scs on-fail on-err)
 		(define (on-rule-scs new-expr new-env)
 			(eval new-expr new-env on-scs on-fail on-err))
@@ -94,8 +104,12 @@
 								(fm-exp (map sub-eval expr)))
 						 (apply-env-to-expr fm-exp env on-rule-scs on-fail on-err))))
 			(else (fail expr env on-scs on-fail on-err))))
+
+	; I'm stumped.
 	(define (fail expr env on-scs on-fail on-err)
 		((ruse-eval-unknown-tail expr env on-scs on-fail on-err)))
+
+	; Apply the function pipeline we have defined.
 	(eval expr env on-scs on-fail on-err))
 
 (define (ruse-eval-base expr env on-scs on-fail on-err)
