@@ -121,6 +121,9 @@
 		; Handle requests to evaluate dynamic form.
 		((and (list? expr) (eqv? (car expr) 'eval))
 		 (ruse-eval-eval-tail expr env on-scs on-fail on-err))
+		; Handle requests to expand dynamic form.
+		((and (list? expr) (eqv? (car expr) 'apply-rules))
+		 (ruse-eval-apply-rules-tail expr env on-scs on-fail on-err))
 		; Handle conditional requests.
 		((and (list? expr) (eqv? (car expr) 'cond))
 		 (ruse-eval-cond-tail expr env on-scs on-fail on-err))
@@ -174,6 +177,16 @@
 (define (ruse-eval-eval-tail expr env on-scs on-fail on-err)
 	(let ((fm (cadr expr)))
 		(ruse-eval fm env on-scs on-fail on-err)))
+
+; Apply the current environment to the form.
+(define (ruse-eval-apply-rules-tail expr env on-scs on-fail on-err)
+	(let ((fm (cadr expr)))
+		(cond
+			((symbol? expr)
+			 (apply-env-to-expr expr env on-scs on-fail on-err))
+			((list? expr)
+			 (apply-env-to-expr expr env on-scs on-fail on-err))
+			(else (on-fail)))))
 
 ; Evaluate conditional expression.
 (define (ruse-eval-cond-tail expr env on-scs on-fail on-err)
