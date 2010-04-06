@@ -52,7 +52,6 @@
 ; Initialize the environment.
 (define global-env '())
 (ruse-global-rule 'tag '(quote tag))
-(ruse-global-rule 'apply-rules '(quote apply-rules))
 (ruse-global-rule '(tag @t @v) '(builtin list t v))
 (ruse-global-rule 'multiply-int '(quote multiply-int))
 (ruse-global-rule 'int '(quote int))
@@ -122,9 +121,6 @@
 		; Handle requests to evaluate dynamic form.
 		((and (list? expr) (eqv? (car expr) 'eval))
 		 (ruse-eval-eval-tail expr env on-scs on-fail on-err))
-		; Handle requests to expand dynamic form.
-		((and (list? expr) (eqv? (car expr) 'apply-rules))
-		 (ruse-eval-apply-rules-tail expr env on-scs on-fail on-err))
 		; Handle conditional requests.
 		((and (list? expr) (eqv? (car expr) 'cond))
 		 (ruse-eval-cond-tail expr env on-scs on-fail on-err))
