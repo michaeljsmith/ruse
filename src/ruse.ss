@@ -181,12 +181,12 @@
 
 ; Apply the current environment to the form.
 (define (ruse-eval-apply-rules-tail expr env on-scs on-fail on-err)
-	(let ((fm (cadr expr)))
+	(let ((fm (cdr expr)))
 		(cond
-			((symbol? expr)
-			 (apply-env-to-expr expr env on-scs on-fail on-err))
-			((list? expr)
-			 (apply-env-to-expr expr env on-scs on-fail on-err))
+			((symbol? fm)
+			 (apply-env-to-expr fm env on-scs on-fail on-err))
+			((list? fm)
+			 (apply-env-to-expr fm env on-scs on-fail on-err))
 			(else (on-fail)))))
 
 ; Evaluate conditional expression.
