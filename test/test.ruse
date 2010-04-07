@@ -18,6 +18,26 @@
 (=* (if @c @t @f)
 		(cond (c t) (else f)))
 
-(if (builtin eq? 1 1)
-	(int 1)
-	(int 0))
+;(if (builtin eq? 1 1)
+;	(int 1)
+;	(int 0))
+
+;(apply-rules square (int 5))
+
+(= record (quote record))
+(= (record @packer @fields)
+	 (builtin list packer fields))
+
+(= packing-pop (quote packing-pop))
+
+(= contiguous-packer (quote contiguous-packer))
+(= (packing-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+	 (tag buffer-pos-ref (builtin list buf (- (int pos) (sizeof type)))))
+(= (packing-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+	 (tag buffer-pos-ref (builtin list buf (+ (int pos) (sizeof type)))))
+
+(= (get ((record @packer (field-list ((@name @type) . @fields-tail))) @field-list-ref) @name)
+	 (get type field-list-ref))
+
+(= test-record (record
+(get test-record 'test-field)

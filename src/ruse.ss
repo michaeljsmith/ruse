@@ -107,7 +107,7 @@
 
 	; I'm stumped.
 	(define (fail expr env on-scs on-fail on-err)
-		((ruse-eval-unknown-tail expr env on-scs on-fail on-err)))
+		(ruse-eval-unknown-tail expr env on-scs on-fail on-err))
 
 	; Apply the function pipeline we have defined.
 	(eval expr env on-scs on-fail on-err))
