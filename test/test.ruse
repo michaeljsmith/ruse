@@ -1,5 +1,10 @@
 ; Test script for ruse.
 
+; Features required TODO:
+; * Rule env must include future rules in same scope.
+; * Quasiquote.
+; * Improper lists in match.
+
 (= multiply (quote multiply))
 
 (= (multiply (int @x) (int @y))
@@ -24,19 +29,50 @@
 
 ;(apply-rules square (int 5))
 
-(= record (quote record))
+(= record 'record)
 (= (record @packer @fields)
 	 (builtin list packer fields))
 
-(= packing-pop (quote packing-pop))
+(= contiguous-packer 'contiguous-packer)
 
-(= contiguous-packer (quote contiguous-packer))
-(= (packing-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+(= packing-field-pop 'packing-field-pop)
+(= packing-field-push 'packing-field-push)
+(= packing-padding-pop 'packing-padding-pop)
+(= packing-padding-push 'packing-padding-push)
+
+(= (packing-padding-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+	 (tag buffer-pos-ref (list buf pos)))
+(= (packing-field-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
 	 (tag buffer-pos-ref (builtin list buf (- (int pos) (sizeof type)))))
-(= (packing-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+(= (packing-padding-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+	 (tag buffer-pos-ref (list buf pos)))
+(= (packing-field-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
 	 (tag buffer-pos-ref (builtin list buf (+ (int pos) (sizeof type)))))
 
+(= (packing-push @packer @ref @type @fields-tail)
+	 (packing-field-push packer (packing-padding-push packer ref type fields-tail) type fields-tail))
+(= (packing-pop @packer @ref @type @fields-tail)
+	 (packing-padding-pop packer (packing-field-pop packer ref type fields-tail) type fields-tail))
+
 ; Record.
+(= (get
+		 (record
+			 (buffer-record-rep @packer)
+			 (field-list ((@name @type) . @fields-tail)))
+		 @name-req
+		 @record-ref)
+
+	 ; Recursively search for the field with the specified name.
+	 (block
+		 (= ref record-ref)
+		 (= recurse 'recurse)
+		 (= (recurse ((@cur-name @cur-type) . @cur-fields-tail))
+				(block
+					(recurse cur-fields-tail)
+		 (= (recurse ((!name @cur-type) . @cur-fields-tail))
+				(get type record-ref))
+		 (= (recurse ())
+				(error "Record has no member \"~a\" name))))
 
 ; Name-mismatch case.
 (= (get
@@ -85,6 +121,20 @@
 		 (recurse fields)
 		 (packing-push packer dummy-ref void fields)
 		 (get dummy-ref pos)))
+
+(= (construct
+		 (record
+			 (buffer-record-rep @packer)
+			 (field-list @fields))
+		 @ref)
+
+	 ; Recursively construct all the fields, starting with the tail of the list.
+	 (block
+		 (= recurse 'recurse)
+		 (= (recurse ((@name @type) . @fields-remaining) @struct-ref)
+				(block
+					(= field-ref (recurse fields-remaining struct-ref))
+					(construct type field-ref)
 
 ;(= test-record (record
 (get test-record 'test-field)
