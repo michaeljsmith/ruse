@@ -36,8 +36,55 @@
 (= (packing-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
 	 (tag buffer-pos-ref (builtin list buf (+ (int pos) (sizeof type)))))
 
-(= (get ((record @packer (field-list ((@name @type) . @fields-tail))) @field-list-ref) @name)
+; Record.
+
+; Name-mismatch case.
+(= (get
+		 (record
+			 (buffer-record-rep @packer)
+			 (field-list ((@name @type) . @fields-tail)))
+		 @name-req
+		 @field-list-ref)
+	 (get (record (buffer-record-rep packer) (field-list fields-tail)) name-req
+				(packing-pop packer field-list-ref type fields-tail)))
+
+; Name match case.
+(= (get
+		 (record
+			 (buffer-record-rep @packer)
+			 (field-list ((@name @type) . @fields-tail)))
+		 @name
+		 @field-list-ref)
 	 (get type field-list-ref))
 
-(= test-record (record
+; Base case.
+(= (get
+		 (record
+			 (buffer-record-rep @packer)
+			 (field-list ()))
+		 @name-req
+		 @field-list-ref)
+	 (error "Record has no member \"~a\" name-req))
+
+(= (sizeof 
+		 (record
+			 (buffer-record-rep @packer)
+			 (field-list @fields)))
+
+	 ; Calculate the size by creating a dummy reference and packing
+	 ; all the fields into it, then returning the position at the end.
+	 (block
+		 (= dummy-ref (buffer-pos-ref (null 0)))
+		 (= recurse 'recurse)
+		 (= (recurse ((@name @type) . @fields-remaining))
+				(block
+					(recurse fields-remaining)
+					(set dummy-ref (packing-push packer dummy-ref type fields-remaining))))
+		 (= (recurse ())
+				null)
+		 (recurse fields)
+		 (packing-push packer dummy-ref void fields)
+		 (get dummy-ref pos)))
+
+;(= test-record (record
 (get test-record 'test-field)
