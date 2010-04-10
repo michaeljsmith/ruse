@@ -164,16 +164,17 @@
 ;----------------------------------------------------------------------------
 ; Testing.
 
-(= (foo . @elms)
-	 (builtin list 'hello elms))
+;(= foo 'foo)
+;(= (foo . @elms)
+;	 (builtin cons 'hello elms))
+
 ;(= (foo @a @b @c)
 ;	 (builtin list 'hello a b c))
 
-(= foo 'foo)
-(= bar (foo 'a 'b 'c))
-bar
+;(= bar (foo 'a 'b 'c))
+;bar
 
-;(= point (buf-record `(x ,int) `(y ,int)))
-;point
+(= point (buf-record `(x ,int) `(y ,int)))
+point
 
 ;(get test-record 'test-field)

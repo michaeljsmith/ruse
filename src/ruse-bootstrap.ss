@@ -99,10 +99,10 @@
 			(fail expr env on-scs on-fail))
 		(define (on-rule-scs new-expr new-env)
 			(define (on-rplc-eval-fail)
-				(printf "Unable to evaluate replacement expression ~a~n" new-expr)
+				(printf "Unable to evaluate replacement expression ~v~n" new-expr)
 				(on-fail))
 			(eval new-expr new-env on-scs on-rplc-eval-fail))
-		(printf "eval-base ~a~n" expr)
+		(printf "eval-base ~v~n" expr)
 		(cond
 			((symbol? expr)
 			 (apply-env-to-expr expr env on-rule-scs on-rule-fail on-err))
@@ -119,7 +119,7 @@
 
 	; I'm stumped.
 	(define (fail expr env on-scs on-fail)
-		(on-err (format "Unknown value type (~a)." expr)))
+		(on-err (format "Unknown value type (~v)." expr)))
 
 	; Apply the function pipeline we have defined.
 	(eval expr env on-scs on-fail))
@@ -129,21 +129,23 @@
 	(cond
 		; Handle requests to evaluate form as a scheme form.
 		((and (list? expr) (eqv? (car expr) 'builtin))
-		 (ruse-eval-builtin-tail expr env on-scs on-fail on-err))
+		 (ruse-eval-builtin expr env on-scs on-fail on-err))
 		; Handle requests to evaluate dynamic form.
 		((and (list? expr) (eqv? (car expr) 'eval))
-		 (ruse-eval-eval-tail expr env on-scs on-fail on-err))
+		 (ruse-eval-eval expr env on-scs on-fail on-err))
 		; Handle conditional requests.
 		((and (list? expr) (eqv? (car expr) 'cond))
-		 (ruse-eval-cond-tail expr env on-scs on-fail on-err))
+		 (ruse-eval-cond expr env on-scs on-fail on-err))
 		; Handle rule definitions.
 		((and (list? expr) (eqv? (car expr) '=))
-		 (ruse-eval-rule-def-tail expr env on-scs on-fail on-err))
+		 (ruse-eval-rule-def expr env on-scs on-fail on-err))
 		; Handle macro definitions.
 		((and (list? expr) (eqv? (car expr) '=*))
-		 (ruse-eval-macro-def-tail expr env on-scs on-fail on-err))
-		; Handle integer literals.
-		((integer? expr) (ruse-eval-integer-tail expr env on-scs on-fail on-err))
+		 (ruse-eval-macro-def expr env on-scs on-fail on-err))
+		; Handle integer literals by returning them as is.
+		((integer? expr) (on-scs expr env))
+		; Handle string literals by returning them as is.
+		((string? expr) (on-scs expr env))
 		(else (on-fail))))
 
 (define (ruse-eval-quasiquote expr env on-scs on-fail on-err)
@@ -162,15 +164,15 @@
 		return
 		; Define action for success.
 		(define (on-scs val env)
-			(printf "Evaluated ~a~nenv=~a~n" expr env)
+			(printf "Evaluated ~v~nenv=~v~n" expr env)
 			(set! global-env env)
 			(return val))
 		(define (on-fail)
-			(printf "Failed to evaluate ~a~n" expr)
+			(printf "Failed to evaluate ~v~n" expr)
 			(return #f))
 		; Define action for error.
 		(define (on-err msg)
-			(printf "Error while evaluating ~a~n" expr)
+			(printf "Error while evaluating ~v~n" expr)
 			(return #f))
 		; Evaluate expression.
 		(ruse-eval expr global-env on-scs on-fail on-err)))
@@ -178,10 +180,10 @@
 ; Evaluate using Scheme.
 (define-namespace-anchor ns-anchor)
 (define eval-ns (namespace-anchor->namespace ns-anchor))
-(define (ruse-eval-builtin-tail expr env on-scs on-fail on-err)
+(define (ruse-eval-builtin expr env on-scs on-fail on-err)
 	(let ((fm (cdr expr)))
 		(define (eval-arg arg)
-			(define (on-arg-fail) (on-err (format "Builtin eval failed to evaluate argument ~a." arg)))
+			(define (on-arg-fail) (on-err (format "Builtin eval failed to evaluate argument ~v." arg)))
 			(let ((rslt #f))
 				(define (on-arg-scs val new-env) (set! rslt val))
 				(ruse-eval arg env on-arg-scs on-arg-fail on-err)
@@ -192,12 +194,12 @@
 				(on-scs bi-rslt env)))))
 
 ; Evaluate dynamic form.
-(define (ruse-eval-eval-tail expr env on-scs on-fail on-err)
+(define (ruse-eval-eval expr env on-scs on-fail on-err)
 	(let ((fm (cadr expr)))
 		(ruse-eval fm env on-scs on-fail on-err)))
 
 ; Apply the current environment to the form.
-(define (ruse-eval-apply-rules-tail expr env on-scs on-fail on-err)
+(define (ruse-eval-apply-rules expr env on-scs on-fail on-err)
 	(let ((fm (cdr expr)))
 		(cond
 			((symbol? fm)
@@ -207,7 +209,7 @@
 			(else (on-fail)))))
 
 ; Evaluate conditional expression.
-(define (ruse-eval-cond-tail expr env on-scs on-fail on-err)
+(define (ruse-eval-cond expr env on-scs on-fail on-err)
 	(when (not (list? (cadr expr))) (on-err "cond arguments not list."))
 	(let eval-cond ((cnd-pairs (cdr expr)))
 		(if (null? cnd-pairs)
@@ -222,14 +224,6 @@
 				(if (eq? cnd 'else)
 					(ruse-eval rslt env on-scs on-fail on-err)
 					(ruse-eval cnd env on-cond-scs (lambda () (eval-cond (cdr cnd-pairs))) on-err))))))
-
-; Return anything that's quoted.
-(define (ruse-eval-quote-tail expr env on-scs on-fail on-err)
-	(on-scs (cadr expr) env))
-
-; Simply return any integers.
-(define (ruse-eval-integer-tail expr env on-scs on-fail on-err)
-	(on-scs expr env))
 
 ; Pattern matching.
 (define (ptn-is-var? ptn)
@@ -250,6 +244,7 @@
 			(match-ptn (car ptn) (car val) bdngs sub-on-scs on-fail))
 		(on-fail)))
 (define (match-ptn ptn val bdngs on-scs on-fail)
+	(printf "match-ptn:~n  ptn=~v~n  val=~v~n" ptn val)
 	(cond
 		((and (symbol? ptn) (ptn-is-var? ptn)) (match-var ptn val bdngs on-scs on-fail))
 		((symbol? ptn) (match-sym ptn val bdngs on-scs on-fail))
@@ -362,7 +357,9 @@
 				((symbol? fm) fm)
 				; Handle forms.
 				((list? fm) (list-ec (: x fm) (recurse x)))
-				((integer? fm) fm))))
+				((pair? fm) (cons (recurse (car fm)) (recurse (cdr fm))))
+				((integer? fm) fm)
+				((string? fm) fm))))
 	(define (compile-body bd)
 		(let recurse ((fm bd))
 			(cond
@@ -370,7 +367,9 @@
 				((symbol? fm) fm)
 				; Handle forms.
 				((list? fm) (list-ec (: x fm) (recurse x)))
-				((integer? fm) fm))))
+				((pair? fm) (cons (recurse (car fm)) (recurse (cdr fm))))
+				((integer? fm) fm)
+				((string? fm) fm))))
 	; Return a pair consisting of the compiled pattern and the compiled body.
 	(cons (compile-pattern (car rl)) (compile-body (cadr rl))))
 
@@ -384,7 +383,9 @@
 				((symbol? fm) fm)
 				; Handle forms.
 				((list? fm) (list-ec (: x fm) (recurse x)))
-				((integer? fm) fm))))
+				((pair? fm) (cons (recurse (car fm)) (recurse (cdr fm))))
+				((integer? fm) fm)
+				((string? fm) fm))))
 	(define (compile-body bd)
 		(let recurse ((fm bd))
 			(cond
@@ -392,20 +393,24 @@
 				((symbol? fm) fm)
 				; Handle forms.
 				((list? fm) (list-ec (: x fm) (recurse x)))
-				((integer? fm) fm))))
+				((pair? fm) (cons (recurse (car fm)) (recurse (cdr fm))))
+				((integer? fm) fm)
+				((string? fm) fm))))
 	; Return a pair consisting of the compiled pattern and the compiled body.
 	(cons (compile-pattern (car mac)) (compile-body (cadr mac))))
 
 ; Evaluate a rule definition (add it to the environment).
-(define (ruse-eval-rule-def-tail expr env on-scs on-fail on-err)
+(define (ruse-eval-rule-def expr env on-scs on-fail on-err)
+	(printf "ruse-eval-rule-def ~v~n" expr)
 	(let ((rl-tpl (compile-rule-def (cdr expr))))
+		(printf "  compiled: ~v~n" rl-tpl)
 		(if rl-tpl
 			(let ((rl (cons rl-tpl env)))
 				(on-scs 'rule-def (cons (cons 'rule rl) env)))
 			(on-fail))))
 
 ; Evaluate a macro definition (add it to the environment).
-(define (ruse-eval-macro-def-tail expr env on-scs on-fail on-err)
+(define (ruse-eval-macro-def expr env on-scs on-fail on-err)
 	(let ((mac-tpl (compile-macro-def (cdr expr))))
 		(if mac-tpl
 			(let ((mac (cons mac-tpl env)))
@@ -427,12 +432,12 @@
 					(define (on-eval-fail)
 						(set! rslt (void))
 						(set! errors (+ 1 errors))
-						(printf "Unable to evaluate form: ~a~n" fm)
+						(printf "Unable to evaluate form: ~v~n" fm)
 						(read-next-data))
 					(set! fm (read p))
 					(if (eof-object? fm)
 						(if (> errors 0)
-							(on-err (format "File contained errors (~a)." errors))
+							(on-err (format "File contained errors (~v)." errors))
 							(on-scs rslt file-env))
 						(ruse-eval fm file-env on-eval-scs on-eval-fail on-err)))))
 		(call-with-input-file f load-from-port)))
@@ -452,7 +457,7 @@
 		(define (on-scs val env)
 			(set! rslt val))
 		(define (on-err msg)
-			(printf "Error: ~a~n" msg))
+			(printf "Error: ~v~n" msg))
 		(load-files global-env on-scs on-err)
 		rslt))
 
@@ -469,7 +474,7 @@
 						(else (parse-input-file arg tail))))))
 		; Parse options (currently no options are supported).
 		(define (parse-option arg tail)
-			(on-err (format "Unknown option \"~a\"" arg))
+			(on-err (format "Unknown option \"~v\"" arg))
 			(parse tail))
 		; Parse input specification.
 		(define (parse-input-file arg tail)
@@ -486,7 +491,7 @@
 		(define (on-scs fs)
 			(set! in-files fs))
 		(define (on-err msg)
-			(printf "Error in command line: ~a~n" msg)
+			(printf "Error in command line: ~v~n" msg)
 			(set! should-run #f))
 		(parse-command-line argv on-scs on-err)
 		(when should-run
