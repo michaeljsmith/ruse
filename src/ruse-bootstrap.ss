@@ -384,7 +384,7 @@
 	(let ((rl-tpl (compile-rule-def (cdr expr))))
 		(if rl-tpl
 			(let ((rl (cons rl-tpl env)))
-				(on-scs rl (cons (cons 'rule rl) env)))
+				(on-scs 'rule-def (cons (cons 'rule rl) env)))
 			(on-fail))))
 
 ; Evaluate a macro definition (add it to the environment).
@@ -392,7 +392,7 @@
 	(let ((mac-tpl (compile-macro-def (cdr expr))))
 		(if mac-tpl
 			(let ((mac (cons mac-tpl env)))
-				(on-scs mac (cons (cons 'macro mac) env)))
+				(on-scs 'mac-def (cons (cons 'macro mac) env)))
 			(on-fail))))
 
 ; Execute a given file.
