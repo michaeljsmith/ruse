@@ -73,8 +73,10 @@
 
 	; Check whether the expression is quasiquoted.
 	(define (check-quasiquote expr env on-scs on-fail)
+		(define (on-qq-fail)
+			(expand-macros expr env on-scs on-fail))
 		(if (and (list? expr) (eqv? (car expr) 'quasiquote))
-			(ruse-eval-quasiquote expr env on-scs on-fail on-err)
+			(ruse-eval-quasiquote expr env on-scs on-qq-fail on-err)
 			(expand-macros expr env on-scs on-fail)))
 
 	; Try to expand any macros before continuing.
@@ -103,12 +105,12 @@
 			((list? expr)
 			 (begin
 				 (let* ((sub-eval (lambda (sub)
-													 (let/cc
-														 return
-														 (define (on-eval val expr) (return val))
-														 (eval sub env on-eval on-rule-fail))))
+														(let/cc
+															return
+															(define (on-eval val expr) (return val))
+															(eval sub env on-eval on-rule-fail))))
 								(fm-exp (map sub-eval expr)))
-						 (apply-env-to-expr fm-exp env on-rule-scs on-fail on-err))))
+					 (apply-env-to-expr fm-exp env on-rule-scs on-fail on-err))))
 			(else (fail expr env on-scs on-fail))))
 
 	; I'm stumped.
@@ -147,7 +149,7 @@
 			 (ruse-eval (cadr cur-expr) env on-scs on-fail on-err))
 			((list? cur-expr) (map recurse cur-expr))
 			(else cur-expr)))
-	(recurse expr))
+	(on-scs (recurse (cadr expr))))
 
 ; Front-end evaluate function.
 (define (ruse-eval-top-level expr)
@@ -167,7 +169,7 @@
 			(printf "Error while evaluating ~a~n" expr)
 			(return #f))
 		; Evaluate expression.
-			(ruse-eval expr global-env on-scs on-fail on-err)))
+		(ruse-eval expr global-env on-scs on-fail on-err)))
 
 ; Evaluate using Scheme.
 (define-namespace-anchor ns-anchor)
@@ -281,23 +283,23 @@
 						 ; Perform a typographical replacement of all variables mentioned
 						 ; in the pattern in the body of the macro.
 						 (let ((expnsn 
-							 (let recurse-pattern ((sub-ptn body))
-								 (cond
-									 ((null? sub-ptn)
-										sub-ptn)
-									 ((list? sub-ptn)
-										(cons (recurse-pattern (car sub-ptn)) (recurse-pattern (cdr sub-ptn))))
-									 ((symbol? sub-ptn)
-										(let check-bindings ((cur-bdngs bdngs))
-											(if (null? cur-bdngs)
-												sub-ptn
-												(let* ((bdng (car cur-bdngs))
-															 (bdng-sym (car bdng))
-															 (bdng-rplc (cdr bdng)))
-													(if (eq? sub-ptn bdng-sym)
-														bdng-rplc
-														(check-bindings (cdr cur-bdngs)))))))
-									 (else sub-ptn)))))
+										 (let recurse-pattern ((sub-ptn body))
+											 (cond
+												 ((null? sub-ptn)
+													sub-ptn)
+												 ((list? sub-ptn)
+													(cons (recurse-pattern (car sub-ptn)) (recurse-pattern (cdr sub-ptn))))
+												 ((symbol? sub-ptn)
+													(let check-bindings ((cur-bdngs bdngs))
+														(if (null? cur-bdngs)
+															sub-ptn
+															(let* ((bdng (car cur-bdngs))
+																		 (bdng-sym (car bdng))
+																		 (bdng-rplc (cdr bdng)))
+																(if (eq? sub-ptn bdng-sym)
+																	bdng-rplc
+																	(check-bindings (cdr cur-bdngs)))))))
+												 (else sub-ptn)))))
 							 (on-scs expnsn mac-env)))))
 		; Using the handlers we have defined, attempt to match the pattern.
 		(match-ptn ptn fm '() on-match-scs on-fail)))
@@ -412,16 +414,18 @@
 				(errors 0)
 				(file-env env))
 		(define (load-from-port p)
-			(let read-next-data ()
-				(define (on-eval-scs val new-env)
-					(set! rslt val)
-					(set! file-env new-env)
-					(read-next-data))
-				(define (on-eval-fail)
-					(set! rslt (void))
-					(set! errors (+ 1 errors))
-					(read-next-data))
-				(let ((fm (read p)))
+			(let ((fm null))
+				(let read-next-data ()
+					(define (on-eval-scs val new-env)
+						(set! rslt val)
+						(set! file-env new-env)
+						(read-next-data))
+					(define (on-eval-fail)
+						(set! rslt (void))
+						(set! errors (+ 1 errors))
+						(printf "Unable to evaluate form: ~a~n" fm)
+						(read-next-data))
+					(set! fm (read p))
 					(if (eof-object? fm)
 						(if (> errors 0)
 							(on-err (format "File contained errors (~a)." errors))
@@ -454,11 +458,11 @@
 		; Main parse function.
 		(define (parse args-left)
 			(unless (null? args-left)
-					 (let ((arg (car args-left))
-								 (tail (cdr args-left)))
-						 (cond
-							 ((eqv? #\- (string-ref arg 0)) (parse-option arg tail))
-							 (else (parse-input-file arg tail))))))
+				(let ((arg (car args-left))
+							(tail (cdr args-left)))
+					(cond
+						((eqv? #\- (string-ref arg 0)) (parse-option arg tail))
+						(else (parse-input-file arg tail))))))
 		; Parse options (currently no options are supported).
 		(define (parse-option arg tail)
 			(on-err (format "Unknown option \"~a\"" arg))
