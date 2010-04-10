@@ -3,114 +3,153 @@
 ; Features required TODO:
 ; * Rule env must include future rules in same scope.
 ; * Quasiquote.
+; * Substitution in patterns.
 ; * Improper lists in match.
 
-(= multiply (quote multiply))
-
-(= (multiply (int @x) (int @y))
-	 (multiply-int x x))
-
-(= square (quote square))
-
-(= (square (@t @x))
-	 (multiply (t x) (t x)))
-
-;(square (int 8))
-;(cond
-;	((builtin eq? 'dog 'dog) (int 1))
-;	(else (int 0)))
-
+;----------------------------------------------------------------------------
+; Control structures.
 (=* (if @c @t @f)
 		(cond (c t) (else f)))
 
-;(if (builtin eq? 1 1)
-;	(int 1)
-;	(int 0))
+;----------------------------------------------------------------------------
+; Arithmetic.
+(= + '+)
+(= - '-)
 
-;(apply-rules square (int 5))
+;----------------------------------------------------------------------------
+; Integers.
+(= (+ (int @a) (int @b))
+	 (add-int a b))
 
-(= record 'record)
-(= (record @packer @fields)
-	 (builtin list packer fields))
+(= (- (int @a) (int @b))
+	 (subtract-int a b))
 
-(= contiguous-packer 'contiguous-packer)
+;----------------------------------------------------------------------------
+; Buffer ref.
+(= buffer-pos-ref 'buffer-pos-ref)
+(= (buffer-pos-ref (buf @buf) (int @pos))
+	 (tag buffer-pos-ref (list (tag buf buf) (tag int pos))))
+(= (+ (buffer-pos-ref (@buf @pos)) ofs)
+	 (tag buffer-pos-ref (list buf (+ pos ofs))))
+(= (- (buffer-pos-ref (@buf @pos)) ofs)
+	 (tag buffer-pos-ref (list buf (- pos ofs))))
 
+;----------------------------------------------------------------------------
+; Packer.
 (= packing-field-pop 'packing-field-pop)
 (= packing-field-push 'packing-field-push)
 (= packing-padding-pop 'packing-padding-pop)
 (= packing-padding-push 'packing-padding-push)
-
-(= (packing-padding-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
-	 (tag buffer-pos-ref (list buf pos)))
-(= (packing-field-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
-	 (tag buffer-pos-ref (builtin list buf (- (int pos) (sizeof type)))))
-(= (packing-padding-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
-	 (tag buffer-pos-ref (list buf pos)))
-(= (packing-field-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
-	 (tag buffer-pos-ref (builtin list buf (+ (int pos) (sizeof type)))))
 
 (= (packing-push @packer @ref @type @fields-tail)
 	 (packing-field-push packer (packing-padding-push packer ref type fields-tail) type fields-tail))
 (= (packing-pop @packer @ref @type @fields-tail)
 	 (packing-padding-pop packer (packing-field-pop packer ref type fields-tail) type fields-tail))
 
+;----------------------------------------------------------------------------
+; Contiguous packer.
+(= contiguous-packer 'contiguous-packer)
+
+(= (packing-padding-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+	 (tag buffer-pos-ref (list buf pos)))
+(= (packing-field-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+	 (- (tag buffer-pos-ref (buf pos)) (sizeof type)))
+(= (packing-padding-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+	 (tag buffer-pos-ref (list buf pos)))
+(= (packing-field-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
+	 (+ (tag buffer-pos-ref (buf pos)) (sizeof type)))
+
+;----------------------------------------------------------------------------
 ; Record.
+(= record 'record)
+
+; General case constructor.
+(=* (record @representation @fields)
+	 (tag record (representation fields)))
+
+;----------------------------------------------------------------------------
+; Buffer record representation.
+
+(= buffer-record-rep 'buffer-record-rep)
+(= (buffer-record-rep @packer)
+	 (tag buffer-record-rep packer))
+
+; Define a simplified record constructor using buffer record representation, since this is the default case.
+(= (record . @field-defs)
+	 (block
+		 (= recurse 'recurse)
+		 (= (recurse (@name @type) . @tail)
+				(cons (list name type) (recurse tail)))
+		 (= (recurse ())
+				(null))
+		 (= fields (recurse field-defs))
+		 (record (buffer-record-rep contiguous-packer) (fields))))
+
+; Get the value of a specified field.
 (= (get
 		 (record
-			 (buffer-record-rep @packer)
-			 (field-list ((@name @type) . @fields-tail)))
+			 ((buffer-record-rep @packer)
+				(field-list @fields)))
 		 @name-req
 		 @record-ref)
 
 	 ; Recursively search for the field with the specified name.
 	 (block
-		 (= ref record-ref)
+		 (= rec (record ((buffer-record-rep packer) (field-list fields))))
+		 (= end-ref (packing-padding-pop packer
+									(+ record-ref (sizeof rec))
+									void fields))
+
 		 (= recurse 'recurse)
-		 (= (recurse ((@cur-name @cur-type) . @cur-fields-tail))
+
+		 ; Name mis-match case.
+		 (= (recurse ((@cur-name @cur-type) . @cur-fields-tail) @cur-ref)
 				(block
-					(recurse cur-fields-tail)
-		 (= (recurse ((!name @cur-type) . @cur-fields-tail))
-				(get type record-ref))
-		 (= (recurse ())
-				(error "Record has no member \"~a\" name))))
+					(= new-ref (packing-padding-pop packer (packing-type-pop packer cur-ref cur-type cur-fields-tail) cur-type cur-fields-tail))
+					(recurse cur-fields-tail new-ref)))
 
-; Name-mismatch case.
-(= (get
-		 (record
-			 (buffer-record-rep @packer)
-			 (field-list ((@name @type) . @fields-tail)))
-		 @name-req
-		 @field-list-ref)
-	 (get (record (buffer-record-rep packer) (field-list fields-tail)) name-req
-				(packing-pop packer field-list-ref type fields-tail)))
+		 ; Name match case.
+		 (= (recurse ((!name @cur-type) . @cur-fields-tail) @cur-ref)
+				(get cur-type cur-ref))
 
-; Name match case.
-(= (get
-		 (record
-			 (buffer-record-rep @packer)
-			 (field-list ((@name @type) . @fields-tail)))
-		 @name
-		 @field-list-ref)
-	 (get type field-list-ref))
+		 ; Base case.
+		 (= (recurse () @cur-ref)
+				(error "Record has no member \"~a\" name))
+		 
+		 (recurse fields end-ref)))
 
-; Base case.
-(= (get
-		 (record
-			 (buffer-record-rep @packer)
-			 (field-list ()))
-		 @name-req
-		 @field-list-ref)
-	 (error "Record has no member \"~a\" name-req))
-
+; Get the total size of the struct given the packer in use.
 (= (sizeof 
 		 (record
-			 (buffer-record-rep @packer)
-			 (field-list @fields)))
+			 ((buffer-record-rep @packer)
+				(field-list @fields))))
 
 	 ; Calculate the size by creating a dummy reference and packing
 	 ; all the fields into it, then returning the position at the end.
 	 (block
 		 (= dummy-ref (buffer-pos-ref (null 0)))
+		 (= recurse 'recurse)
+		 (= (recurse ((@name @type) . @fields-remaining))
+				(block
+					(recurse fields-remaining)
+					(set dummy-ref (packing-padding-push packer dummy-ref type fields-remaining))
+					(set dummy-ref (packing-type-push packer dummy-ref type fields-remaining))))
+		 (= (recurse ())
+				null)
+		 (recurse fields)
+		 (set dummy-ref (packing-padding-push packer dummy-ref void fields))
+		 (get dummy-ref pos)))
+
+; Default-construct an instance of the record.
+(= (construct
+		 (record
+			 ((buffer-record-rep @packer)
+				(field-list @fields)))
+		 @record-ref)
+
+	 ; Recursively construct all the fields, starting with the tail of the list.
+	 (block
+		 (= field-ref record-ref)
 		 (= recurse 'recurse)
 		 (= (recurse ((@name @type) . @fields-remaining))
 				(block
@@ -122,19 +161,8 @@
 		 (packing-push packer dummy-ref void fields)
 		 (get dummy-ref pos)))
 
-(= (construct
-		 (record
-			 (buffer-record-rep @packer)
-			 (field-list @fields))
-		 @ref)
-
-	 ; Recursively construct all the fields, starting with the tail of the list.
-	 (block
-		 (= recurse 'recurse)
-		 (= (recurse ((@name @type) . @fields-remaining) @struct-ref)
-				(block
-					(= field-ref (recurse fields-remaining struct-ref))
-					(construct type field-ref)
+;----------------------------------------------------------------------------
+; Testing.
 
 ;(= test-record (record
-(get test-record 'test-field)
+;(get test-record 'test-field)
