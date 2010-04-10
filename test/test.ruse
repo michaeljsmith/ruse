@@ -2,7 +2,6 @@
 
 ; Features required TODO:
 ; * Rule env must include future rules in same scope.
-; * Quasiquote.
 ; * Substitution in patterns.
 ; * Improper lists in match.
 
@@ -75,7 +74,8 @@
 	 (tag buffer-record-rep packer))
 
 ; Define a simplified record constructor using buffer record representation, since this is the default case.
-(= (record . @field-defs)
+(= buf-record 'buf-record)
+(= (buf-record . @field-defs)
 	 (block
 		 (= recurse 'recurse)
 		 (= (recurse (@name @type) . @tail)
@@ -164,6 +164,16 @@
 ;----------------------------------------------------------------------------
 ; Testing.
 
-(= point (record `(x ,int) `(y ,int)))
-point
+(= (foo . @elms)
+	 (builtin list 'hello elms))
+;(= (foo @a @b @c)
+;	 (builtin list 'hello a b c))
+
+(= foo 'foo)
+(= bar (foo 'a 'b 'c))
+bar
+
+;(= point (buf-record `(x ,int) `(y ,int)))
+;point
+
 ;(get test-record 'test-field)

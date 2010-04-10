@@ -95,10 +95,14 @@
 
 	; Apply any rules that match the current expression.
 	(define (expand-rules expr env on-scs on-fail)
-		(define (on-rule-scs new-expr new-env)
-			(eval new-expr new-env on-scs on-fail))
 		(define (on-rule-fail)
 			(fail expr env on-scs on-fail))
+		(define (on-rule-scs new-expr new-env)
+			(define (on-rplc-eval-fail)
+				(printf "Unable to evaluate replacement expression ~a~n" new-expr)
+				(on-fail))
+			(eval new-expr new-env on-scs on-rplc-eval-fail))
+		(printf "eval-base ~a~n" expr)
 		(cond
 			((symbol? expr)
 			 (apply-env-to-expr expr env on-rule-scs on-rule-fail on-err))
