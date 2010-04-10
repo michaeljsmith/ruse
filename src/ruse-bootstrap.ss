@@ -119,7 +119,8 @@
 
 	; I'm stumped.
 	(define (fail expr env on-scs on-fail)
-		(on-err (format "Unknown value type (~v)." expr)))
+		(on-err (format "Unknown value type (~v)." expr))
+		(printf "Shouldn't get here (1).~n"))
 
 	; Apply the function pipeline we have defined.
 	(eval expr env on-scs on-fail))
@@ -436,16 +437,16 @@
 							(set! errors (+ 1 errors))
 							(printf "Unable to evaluate form: ~v~n" fm)
 							(skip-current-data))
-						(define (on-eval-err)
+						(define (on-eval-err msg)
 							(set! rslt (void))
 							(set! errors (+ 1 errors))
-							(printf "Error while evaluating form: ~v~n" fm)
+							(printf "Error while evaluating form: ~v~n  Message: ~a~n" fm msg)
 							(skip-current-data))
 						(set! fm (read p))
 						(unless (eof-object? fm)
 							(begin
-								(ruse-eval fm file-env on-eval-scs on-eval-fail on-err)
-								(printf "Shouldn't get here.~n"))))
+								(ruse-eval fm file-env on-eval-scs on-eval-fail on-eval-err)
+								(printf "Shouldn't get here (2).~n"))))
 					(unless (eof-object? fm)
 						(read-next-data))))
 			(if (> errors 0)
