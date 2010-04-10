@@ -62,41 +62,41 @@
 (define (ruse-eval expr env on-scs on-fail on-err)
 
 	; Primary evaluation function.
-	(define (eval expr env on-scs on-fail on-err)
-		(check-quote expr env on-scs on-fail on-err))
+	(define (eval expr env on-scs on-fail)
+		(check-quote expr env on-scs on-fail))
 
 	; Check whether expression is quoted, if so return the value.
-	(define (check-quote expr env on-scs on-fail on-err)
+	(define (check-quote expr env on-scs on-fail)
 		(if (and (list? expr) (eqv? (car expr) 'quote))
 			(on-scs (cadr expr) env)
-			(check-quasiquote expr env on-scs on-fail on-err)))
+			(check-quasiquote expr env on-scs on-fail)))
 
 	; Check whether the expression is quasiquoted.
-	(define (check-quasiquote expr env on-scs on-fail on-err)
+	(define (check-quasiquote expr env on-scs on-fail)
 		(if (and (list? expr) (eqv? (car expr) 'quasiquote))
 			(ruse-eval-quasiquote expr env on-scs on-fail on-err)
-			(expand-macros expr env on-scs on-fail on-err)))
+			(expand-macros expr env on-scs on-fail)))
 
 	; Try to expand any macros before continuing.
-	(define (expand-macros expr env on-scs on-fail on-err)
+	(define (expand-macros expr env on-scs on-fail)
 		(define (on-mac-scs val mac-env)
-			(eval val env on-scs on-fail on-err))
+			(eval val env on-scs on-fail))
 		(define (on-mac-fail)
-			(eval-base expr env on-scs on-fail on-err))
+			(eval-base expr env on-scs on-fail))
 		(apply-env-macros-to-expr expr env on-mac-scs on-mac-fail on-err))
 
 	; Evalute any core functions (eg builtin functions).
-	(define (eval-base expr env on-scs on-fail on-err)
+	(define (eval-base expr env on-scs on-fail)
 		(define (on-base-fail)
-			(expand-rules expr env on-scs on-fail on-err))
+			(expand-rules expr env on-scs on-fail))
 		(ruse-eval-base expr env on-scs on-base-fail on-err))
 
 	; Apply any rules that match the current expression.
-	(define (expand-rules expr env on-scs on-fail on-err)
+	(define (expand-rules expr env on-scs on-fail)
 		(define (on-rule-scs new-expr new-env)
-			(eval new-expr new-env on-scs on-fail on-err))
+			(eval new-expr new-env on-scs on-fail))
 		(define (on-rule-fail)
-			(fail expr env on-scs on-fail on-err))
+			(fail expr env on-scs on-fail))
 		(cond
 			((symbol? expr)
 			 (apply-env-to-expr expr env on-rule-scs on-rule-fail on-err))
@@ -106,17 +106,17 @@
 													 (let/cc
 														 return
 														 (define (on-eval val expr) (return val))
-														 (eval sub env on-eval on-rule-fail on-err))))
+														 (eval sub env on-eval on-rule-fail))))
 								(fm-exp (map sub-eval expr)))
 						 (apply-env-to-expr fm-exp env on-rule-scs on-fail on-err))))
-			(else (fail expr env on-scs on-fail on-err))))
+			(else (fail expr env on-scs on-fail))))
 
 	; I'm stumped.
-	(define (fail expr env on-scs on-fail on-err)
-		(ruse-eval-unknown-tail expr env on-scs on-fail on-err))
+	(define (fail expr env on-scs on-fail)
+		(on-err (format "Unknown value type (~a)." expr)))
 
 	; Apply the function pipeline we have defined.
-	(eval expr env on-scs on-fail on-err))
+	(eval expr env on-scs on-fail))
 
 (define (ruse-eval-base expr env on-scs on-fail on-err)
 	; Check whether the expression is a rule definition.
@@ -345,10 +345,6 @@
 										on-err))
 			; If the env entry is not a rule, skip it.
 			(else (recurse (cdr cur-env))))))
-
-; Handle completely unexpected value.
-(define (ruse-eval-unknown-tail expr env on-scs on-fail on-err)
-	(on-err (format "Unknown value type (~a)." expr)))
 
 ; Compile a rule definition into an internal format.
 (define (compile-rule-def rl)
