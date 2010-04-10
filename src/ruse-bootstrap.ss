@@ -69,6 +69,12 @@
 	(define (check-quote expr env on-scs on-fail on-err)
 		(if (and (list? expr) (eqv? (car expr) 'quote))
 			(on-scs (cadr expr) env)
+			(check-quasiquote expr env on-scs on-fail on-err)))
+
+	; Check whether the expression is quasiquoted.
+	(define (check-quasiquote expr env on-scs on-fail on-err)
+		(if (and (list? expr) (eqv? (car expr) 'quasiquote))
+			(ruse-eval-quasiquote expr env on-scs on-fail on-err)
 			(expand-macros expr env on-scs on-fail on-err)))
 
 	; Try to expand any macros before continuing.
@@ -133,6 +139,15 @@
 		; Handle integer literals.
 		((integer? expr) (ruse-eval-integer-tail expr env on-scs on-fail on-err))
 		(else (on-fail))))
+
+(define (ruse-eval-quasiquote expr env on-scs on-fail on-err)
+	(define (recurse cur-expr)
+		(cond
+			((and (list? cur-expr) (eqv? 'unquote (car cur-expr)))
+			 (ruse-eval (cadr cur-expr) env on-scs on-fail on-err))
+			((list? cur-expr) (map recurse cur-expr))
+			(else cur-expr)))
+	(recurse expr))
 
 ; Front-end evaluate function.
 (define (ruse-eval-top-level expr)
