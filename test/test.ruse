@@ -15,8 +15,8 @@
 (= (do-seq @x)
 	 x)
 (= block 'block)
-(= (block @args)
-	 (do-seq args))
+(=* (block @args)
+	 (scope (do-seq args)))
 
 ;----------------------------------------------------------------------------
 ; Arithmetic.

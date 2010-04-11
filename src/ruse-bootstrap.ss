@@ -134,6 +134,8 @@
 		; Handle requests to evaluate dynamic form.
 		((and (list? expr) (eqv? (car expr) 'eval))
 		 (ruse-eval-eval expr env on-scs on-fail on-err))
+		((and (list? expr) (eqv? (car expr) 'scope))
+		 (ruse-eval-scope expr env on-scs on-fail on-err))
 		; Handle conditional requests.
 		((and (list? expr) (eqv? (car expr) 'cond))
 		 (ruse-eval-cond expr env on-scs on-fail on-err))
@@ -178,6 +180,12 @@
 (define (ruse-eval-eval expr env on-scs on-fail on-err)
 	(let ((fm (cadr expr)))
 		(ruse-eval fm env on-scs on-fail on-err)))
+
+; Evaluate scope declaration.
+(define (ruse-eval-scope expr env on-scs on-fail on-err)
+	(let ((fm (cadr expr))
+				(scope-env (cons (make-scope-bdng (make-scope)) env)))
+		(ruse-eval fm scope-env on-scs on-fail on-err)))
 
 ; Apply the current environment to the form.
 (define (ruse-eval-apply-rules expr env on-scs on-fail on-err)
@@ -284,7 +292,7 @@
 		; Using the handlers we have defined, attempt to match the pattern.
 		(match-ptn ptn fm '() on-match-scs on-fail)))
 
-(define (make-scope) null)
+(define (make-scope) (box null))
 (define (make-scope-bdng scope) (cons 'scope scope))
 
 ; Accessor functions for bindings.
@@ -313,9 +321,9 @@
 									 on-err))
 			; Check whether the current entry is a sub-scope.
 			((bdng-is-scope? (car cur-env))
-			 (let ((sub-env (cdr cur-env)))
+			 (let ((sub-env (unbox (bdng->scope (car cur-env)))))
 				 (recurse sub-env)
-				 (recurse (bdng->scope cur-env))))
+				 (recurse (cdr cur-env))))
 			; If the env entry is not a rule, skip it.
 			(else (recurse (cdr cur-env))))))
 
@@ -337,7 +345,7 @@
 										on-err))
 			; Check whether the current entry is a sub-scope.
 			((bdng-is-scope? (car cur-env))
-			 (let ((sub-env (bdng->scope cur-env)))
+			 (let ((sub-env (unbox (bdng->scope (car cur-env)))))
 				 (recurse sub-env)
 				 (recurse (cdr cur-env))))
 			; If the env entry is not a macro, skip it.
@@ -395,6 +403,22 @@
 	; Return a pair consisting of the compiled pattern and the compiled body.
 	(cons (compile-pattern (car mac)) (compile-body (cadr mac))))
 
+; Modify the current scope (the top of the environment stack) to
+; include a new definition.
+(define (ruse-add-to-current-scope bdng env on-err)
+	(let* ((top-env (car env))
+				 (top-scope
+					 (begin
+						 (printf "top-env = ~v" top-env)
+						 (unless (bdng-is-scope? top-env)
+							 (on-err (format
+												 (string-append
+													 "Declaration (~v) failed: "
+													 "top binding is not scope.")
+												 (cadr bdng))))
+						 (bdng->scope top-env))))
+		(set-box! top-scope (cons bdng (unbox top-scope)))))
+
 ; Evaluate a rule definition (add it to the environment).
 (define (ruse-eval-rule-def expr env on-scs on-fail on-err)
 	(printf "ruse-eval-rule-def ~v~n" expr)
@@ -402,7 +426,8 @@
 		(printf "  compiled: ~v~n" rl-tpl)
 		(if rl-tpl
 			(let ((rl (cons rl-tpl env)))
-				(on-scs 'rule-def (cons (cons 'rule rl) env)))
+				(ruse-add-to-current-scope (cons 'rule rl) env on-err)
+				(on-scs 'rule-def env))
 			(on-fail))))
 
 ; Evaluate a macro definition (add it to the environment).
@@ -410,7 +435,8 @@
 	(let ((mac-tpl (compile-macro-def (cdr expr))))
 		(if mac-tpl
 			(let ((mac (cons mac-tpl env)))
-				(on-scs 'mac-def (cons (cons 'macro mac) env)))
+				(ruse-add-to-current-scope (cons 'macro mac) env on-err)
+				(on-scs 'mac-def env))
 			(on-fail))))
 
 ; Execute a given file.
