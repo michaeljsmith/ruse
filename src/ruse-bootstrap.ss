@@ -158,26 +158,6 @@
 			(else cur-expr)))
 	(on-scs (recurse (cadr expr))))
 
-; Front-end evaluate function.
-(define (ruse-eval-top-level expr)
-	; Define exit point.
-	(let/cc
-		return
-		; Define action for success.
-		(define (on-scs val env)
-			(printf "Evaluated ~v~nenv=~v~n" expr env)
-			(set! global-env env)
-			(return val))
-		(define (on-fail)
-			(printf "Failed to evaluate ~v~n" expr)
-			(return #f))
-		; Define action for error.
-		(define (on-err msg)
-			(printf "Error while evaluating ~v~n" expr)
-			(return #f))
-		; Evaluate expression.
-		(ruse-eval expr global-env on-scs on-fail on-err)))
-
 ; Evaluate using Scheme.
 (define-namespace-anchor ns-anchor)
 (define eval-ns (namespace-anchor->namespace ns-anchor))
@@ -304,11 +284,16 @@
 		; Using the handlers we have defined, attempt to match the pattern.
 		(match-ptn ptn fm '() on-match-scs on-fail)))
 
+(define (make-scope) null)
+(define (make-scope-bdng scope) (cons 'scope scope))
+
 ; Accessor functions for bindings.
 (define (bdng-is-rule? bdng) (eq? 'rule (car bdng)))
 (define (bdng->rule bdng) (cdr bdng))
 (define (bdng-is-macro? bdng) (eq? 'macro (car bdng)))
 (define (bdng->macro bdng) (cdr bdng))
+(define (bdng-is-scope? bdng) (eq? 'scope (car bdng)))
+(define (bdng->scope bdng) (cdr bdng))
 
 ; Function taking an expression and the current environment and applying
 ; all the bindings to the expression until one matches.
@@ -326,6 +311,11 @@
 									 on-scs
 									 (lambda () (recurse (cdr cur-env)))
 									 on-err))
+			; Check whether the current entry is a sub-scope.
+			((bdng-is-scope? (car cur-env))
+			 (let ((sub-env (cdr cur-env)))
+				 (recurse sub-env)
+				 (recurse (bdng->scope cur-env))))
 			; If the env entry is not a rule, skip it.
 			(else (recurse (cdr cur-env))))))
 
@@ -345,7 +335,12 @@
 										on-scs
 										(lambda () (recurse (cdr cur-env)))
 										on-err))
-			; If the env entry is not a rule, skip it.
+			; Check whether the current entry is a sub-scope.
+			((bdng-is-scope? (car cur-env))
+			 (let ((sub-env (bdng->scope cur-env)))
+				 (recurse sub-env)
+				 (recurse (cdr cur-env))))
+			; If the env entry is not a macro, skip it.
 			(else (recurse (cdr cur-env))))))
 
 ; Compile a rule definition into an internal format.
@@ -452,6 +447,9 @@
 			(if (> errors 0)
 				(on-err (format "File contained errors (~v)." errors))
 				(on-scs rslt file-env)))
+
+		; Push a top-level scope onto the environment stack.
+		(set! file-env (cons (make-scope-bdng (make-scope)) file-env))
 		(call-with-input-file f load-from-port)))
 
 ; Top level file execution function.
@@ -506,10 +504,12 @@
 			(printf "Error in command line: ~v~n" msg)
 			(set! should-run #f))
 		(parse-command-line argv on-scs on-err)
+		(when (null? in-files)
+			(begin
+				(set! should-run #f)
+				(printf "No input files specified.~n")))
 		(when should-run
-			(cond
-				((null? in-files) (printf  "Running REPL~n"))
-				(else (ruse-load-files in-files))))))
+			(ruse-load-files in-files))))
 
 ; Run program - pass command line to main function.
 (let ((argv (vector->list (current-command-line-arguments))))
