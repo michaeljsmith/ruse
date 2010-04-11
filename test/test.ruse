@@ -9,6 +9,14 @@
 ; Control structures.
 (=* (if @c @t @f)
 		(cond (c t) (else f)))
+(= do-seq 'do-seq)
+(= (do-seq @x . @args)
+	 (do-seq args))
+(= (do-seq @x)
+	 x)
+(= block 'block)
+(= (block @args)
+	 (do-seq args))
 
 ;----------------------------------------------------------------------------
 ; Arithmetic.
