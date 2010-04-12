@@ -411,6 +411,7 @@
 ; Modify the current scope (the top of the environment stack) to
 ; include a new definition.
 (define (ruse-add-to-current-scope bdng env on-err)
+	(printf "     top-env ~v~n" (car env))
 	(let* ((top-env (car env))
 				 (top-scope
 					 (begin
