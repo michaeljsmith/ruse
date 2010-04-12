@@ -309,8 +309,7 @@
 	(let recurse ((cur-env env))
 		(cond
 			; Have we tried every entry in the env?
-			((null? cur-env)
-			 (on-fail))
+			((null? cur-env) #f)
 			; is the current entry a rule?
 			((bdng-is-rule? (car cur-env))
 			 ; Attempt to apply the rule to the expression. If it fails,
@@ -323,9 +322,13 @@
 			((bdng-is-scope? (car cur-env))
 			 (let ((sub-env (unbox (bdng->scope (car cur-env)))))
 				 (recurse sub-env)
+				 (printf "Recursing to next scope: ~v~n" (cdr cur-env))
 				 (recurse (cdr cur-env))))
 			; If the env entry is not a rule, skip it.
-			(else (recurse (cdr cur-env))))))
+			(else (recurse (cdr cur-env)))))
+
+	; We found no matching rules, so we failed.
+	(on-fail))
 
 ; Function taking an (unevaluated) expression and the current environment and applying
 ; all the macros in the current environment to the expression until one matches.
@@ -333,8 +336,7 @@
 	(let recurse ((cur-env env))
 		(cond
 			; Have we tried every entry in the env?
-			((null? cur-env)
-			 (on-fail))
+			((null? cur-env) #f)
 			; Is the current entry a macro?
 			((bdng-is-macro? (car cur-env))
 			 ; Attempt to apply the macro to the expression. If it fails,
@@ -349,7 +351,10 @@
 				 (recurse sub-env)
 				 (recurse (cdr cur-env))))
 			; If the env entry is not a macro, skip it.
-			(else (recurse (cdr cur-env))))))
+			(else (recurse (cdr cur-env)))))
+
+	; We found no matching macros, so we failed.
+	(on-fail))
 
 ; Compile a rule definition into an internal format.
 (define (compile-rule-def rl)
@@ -409,7 +414,6 @@
 	(let* ((top-env (car env))
 				 (top-scope
 					 (begin
-						 (printf "top-env = ~v" top-env)
 						 (unless (bdng-is-scope? top-env)
 							 (on-err (format
 												 (string-append
@@ -417,6 +421,7 @@
 													 "top binding is not scope.")
 												 (cadr bdng))))
 						 (bdng->scope top-env))))
+		(printf "    top-env = ~v~n    top-scope = ~v\n" top-env top-scope)
 		(set-box! top-scope (cons bdng (unbox top-scope)))))
 
 ; Evaluate a rule definition (add it to the environment).
@@ -476,6 +481,7 @@
 
 		; Push a top-level scope onto the environment stack.
 		(set! file-env (cons (make-scope-bdng (make-scope)) file-env))
+		(printf "ruse-load-file: env = ~v~n" file-env)
 		(call-with-input-file f load-from-port)))
 
 ; Top level file execution function.
