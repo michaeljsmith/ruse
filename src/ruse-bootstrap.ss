@@ -174,11 +174,16 @@
 (define (ruse-eval-builtin expr env on-scs on-fail on-err)
 	(let ((fm (cdr expr)))
 		(define (eval-arg arg)
-			(define (on-arg-fail) (on-err (format "Builtin eval failed to evaluate argument ~v." arg)))
-			(let ((rslt #f))
-				(define (on-arg-scs val new-env) (set! rslt val))
-				(ruse-eval arg env on-arg-scs on-arg-fail on-err)
-				(list 'quote rslt)))
+			(list
+				'quote
+				(let/cc
+					arg-done
+					(define (on-arg-fail) (on-err (format "Builtin eval failed to evaluate argument ~v." arg)))
+					(define (on-arg-scs val new-env)
+						(printf "on-arg-scs: ~v~n" val)
+						(arg-done val))
+					(printf "  eval builtin arg: env = ~v~n" env)
+					(ruse-eval arg env on-arg-scs on-arg-fail on-err))))
 		(printf "ruse-eval-builtin ~v~n" fm)
 		(let* ((val-fm (map eval-arg (cdr fm)))
 					 (bi-expr (cons (car fm) val-fm)))
