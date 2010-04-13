@@ -1,9 +1,7 @@
 ; Test script for ruse.
 
 ; Features required TODO:
-; * Rule env must include future rules in same scope.
 ; * Substitution in patterns.
-; * Improper lists in match.
 
 ;----------------------------------------------------------------------------
 ; Control structures.

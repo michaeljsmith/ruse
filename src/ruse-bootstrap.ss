@@ -222,15 +222,18 @@
 			(let* ((cnd-pair (car cnd-pairs))
 						 (cnd (car cnd-pair))
 						 (rslt (cadr cnd-pair)))
-				(define (on-rslt-fail) (on-err (format "Failed to eval cond result: ~v." rslt)))
-				(define (on-cond-scs cnd-val cond-env)
-					(if cnd-val
-						(ruse-eval rslt env (lambda (nval nenv) (on-scs nval nenv)) on-rslt-fail on-err)
-						(eval-cond (cdr cnd-pairs))))
-				(define (on-cond-fail) (on-err (format "Failed to eval cond test: ~v." cnd)))
-				(if (eq? cnd 'else)
-					(ruse-eval rslt env on-scs on-rslt-fail on-err)
-					(ruse-eval cnd env on-cond-scs on-cond-fail on-err))))))
+				(let/cc
+					exit
+					(define (on-rslt-fail) (on-err (format "Failed to eval cond result: ~v." rslt)))
+					(define (on-cond-scs cnd-val cond-env)
+						(if cnd-val
+							(ruse-eval rslt env on-scs on-rslt-fail on-err)
+							(eval-cond (cdr cnd-pairs)))
+						(exit))
+					(define (on-cond-fail) (on-err (format "Failed to eval cond test: ~v." cnd)))
+					(if (eq? cnd 'else)
+						(ruse-eval rslt env on-scs on-rslt-fail on-err)
+						(ruse-eval cnd env on-cond-scs on-cond-fail on-err)))))))
 
 ; Pattern matching.
 (define (ptn-is-var? ptn)
