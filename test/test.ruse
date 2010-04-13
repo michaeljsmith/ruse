@@ -52,6 +52,10 @@
 	 (tag buffer-pos-ref (list buf (- pos ofs))))
 
 ;----------------------------------------------------------------------------
+; Packable types.
+(= sizeof 'sizeof)
+
+;----------------------------------------------------------------------------
 ; Packer.
 (= packing-field-pop 'packing-field-pop)
 (= packing-field-push 'packing-field-push)
@@ -84,6 +88,10 @@
 (= (record @representation @fields)
 	 (tag record (list representation fields)))
 
+(= field-list 'field-list)
+(= (field-list @fields)
+	 (tag field-list fields))
+
 ;----------------------------------------------------------------------------
 ; Buffer record representation.
 
@@ -101,7 +109,7 @@
 		 (= (recurse ())
 				null)
 		 (= fields (recurse field-defs))
-		 (record (buffer-record-rep contiguous-packer) fields)))
+		 (record (buffer-record-rep contiguous-packer) (field-list fields))))
 
 ; Get the value of a specified field.
 (= (get
@@ -193,6 +201,6 @@
 ;bar
 
 (= point (buf-record `(x ,int) `(y ,int) `(z ,int)))
-point
+(sizeof point)
 
 ;(get test-record 'test-field)
