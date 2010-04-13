@@ -4,6 +4,13 @@
 ; * Substitution in patterns.
 
 ;----------------------------------------------------------------------------
+; Data manipulation.
+(= cons 'cons)
+(= (cons @h @t) (builtin cons h t))
+(= list 'list)
+(= (list . @elms) elms)
+
+;----------------------------------------------------------------------------
 ; Control structures.
 (=* (if @c @tr @f)
 		(cond (c tr) (else f)))
@@ -14,7 +21,7 @@
 	 x)
 (= block 'block)
 (=* (block . @args)
-	 (scope (do-seq args)))
+	 (scope (do-seq . args)))
 
 ;----------------------------------------------------------------------------
 ; Arithmetic.
@@ -70,7 +77,7 @@
 
 ; General case constructor.
 (= (record @representation @fields)
-	 (tag record (representation fields)))
+	 (tag record (list representation fields)))
 
 ;----------------------------------------------------------------------------
 ; Buffer record representation.
@@ -84,12 +91,12 @@
 (= (buf-record . @field-defs)
 	 (block
 		 (= recurse 'recurse)
-		 (= (recurse (@name @type) . @tail)
+		 (= (recurse ((@name @type) . @tail))
 				(cons (list name type) (recurse tail)))
 		 (= (recurse ())
-				(null))
+				null)
 		 (= fields (recurse field-defs))
-		 (record (buffer-record-rep contiguous-packer) (fields))))
+		 (record (buffer-record-rep contiguous-packer) fields)))
 
 ; Get the value of a specified field.
 (= (get
@@ -133,7 +140,7 @@
 	 ; Calculate the size by creating a dummy reference and packing
 	 ; all the fields into it, then returning the position at the end.
 	 (block
-		 (= dummy-ref (buffer-pos-ref (null 0)))
+		 (= dummy-ref (buffer-pos-ref ((buf null) (int 0))))
 		 (= recurse 'recurse)
 		 (= (recurse ((@name @type) . @fields-remaining))
 				(block
@@ -180,7 +187,7 @@
 ;(= bar (foo 'a 'b 'c))
 ;bar
 
-(= point (buf-record `(x ,int) `(y ,int)))
+(= point (buf-record `(x ,int) `(y ,int) `(z ,int)))
 point
 
 ;(get test-record 'test-field)

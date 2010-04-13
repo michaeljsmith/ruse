@@ -51,6 +51,7 @@
 
 ; Initialize the environment.
 (define global-env '())
+(ruse-global-rule 'null (quote '()))
 (ruse-global-rule 'tag '(quote tag))
 (ruse-global-rule '(tag @t1 @v) '(builtin list t1 v))
 (ruse-global-rule 'multiply-int '(quote multiply-int))
@@ -68,7 +69,9 @@
 	; Check whether expression is quoted, if so return the value.
 	(define (check-quote expr env on-scs on-fail)
 		(if (and (list? expr) (eqv? (car expr) 'quote))
-			(on-scs (cadr expr) env)
+			(begin
+				(printf "quoted value: ~v~n" (cadr expr))
+				(on-scs (cadr expr) env))
 			(check-quasiquote expr env on-scs on-fail)))
 
 	; Check whether the expression is quasiquoted.
@@ -104,10 +107,10 @@
 			(printf "on-rule-scs new-expr=~v~n" new-expr)
 			(eval new-expr new-env
 						(lambda (rpl-val rpl-env)
-							(printf "  replacement=~v~n" rpl-val)
+							(printf "  replacement=~v (for ~v)~n" rpl-val new-expr)
 							(on-scs rpl-val rpl-env))
 						on-rplc-eval-fail))
-		(printf "eval-base ~v~n" expr)
+		(printf "expand-rules ~v~n" expr)
 		(cond
 			((symbol? expr)
 			 (apply-env-to-expr expr env on-rule-scs on-rule-fail on-err))
@@ -163,10 +166,17 @@
 		(define (on-unquote-fail) (on-err (format "Failed to unquote: ~v." expr)))
 		(cond
 			((and (list? cur-expr) (eqv? 'unquote (car cur-expr)))
-			 (ruse-eval (cadr cur-expr) env on-scs on-unquote-fail on-err))
+			 (let/cc
+				 return
+				 (define (on-unquote-scs uq-val uq-env)
+					 (return uq-val))
+				 (ruse-eval (cadr cur-expr) env on-unquote-scs on-unquote-fail on-err)))
 			((list? cur-expr) (map recurse cur-expr))
 			(else cur-expr)))
-	(on-scs (recurse (cadr expr))))
+	(printf "ruse-eval-quasiquote ~v~n" expr)
+	(let ((rslt (recurse (cadr expr))))
+		(printf "quasiquote result: ~v (for ~v)~n" rslt expr)
+		(on-scs rslt env)))
 
 ; Evaluate using Scheme.
 (define-namespace-anchor ns-anchor)
@@ -188,6 +198,7 @@
 		(let* ((val-fm (map eval-arg (cdr fm)))
 					 (bi-expr (cons (car fm) val-fm)))
 			(let ((bi-rslt (eval bi-expr eval-ns)))
+				(printf "bi-rslt=~v (for ~v, semi ~v)~n" bi-rslt fm bi-expr)
 				(on-scs bi-rslt env)))))
 
 ; Evaluate dynamic form.
@@ -201,17 +212,8 @@
 	(define (on-scope-fail) (on-err (format "Failed to eval scope argument: ~v." expr)))
 	(let ((fm (cadr expr))
 				(scope-env (cons (make-scope-bdng (make-scope)) env)))
-		(ruse-eval fm scope-env on-scs on-scope-fail on-err)))
-
-; Apply the current environment to the form.
-(define (ruse-eval-apply-rules expr env on-scs on-fail on-err)
-	(let ((fm (cdr expr)))
-		(cond
-			((symbol? fm)
-			 (apply-env-to-expr fm env on-scs on-fail on-err))
-			((list? fm)
-			 (apply-env-to-expr fm env on-scs on-fail on-err))
-			(else (on-fail)))))
+		(ruse-eval fm scope-env (lambda (nval nexpr)
+															(printf "scope-env scs~n") (on-scs nval nexpr)) on-scope-fail on-err)))
 
 ; Evaluate conditional expression.
 (define (ruse-eval-cond expr env on-scs on-fail on-err)
@@ -304,7 +306,7 @@
 											 (cond
 												 ((null? sub-ptn)
 													sub-ptn)
-												 ((list? sub-ptn)
+												 ((pair? sub-ptn)
 													(cons (recurse-pattern (car sub-ptn)) (recurse-pattern (cdr sub-ptn))))
 												 ((symbol? sub-ptn)
 													(let check-bindings ((cur-bdngs bdngs))
@@ -317,6 +319,7 @@
 																	bdng-rplc
 																	(check-bindings (cdr cur-bdngs)))))))
 												 (else sub-ptn)))))
+							 (printf "macro expansion = ~v (of ~v)~n" expnsn fm)
 							 (on-scs expnsn mac-env)))))
 		; Using the handlers we have defined, attempt to match the pattern.
 		(match-ptn ptn fm '() on-match-scs on-fail)))
@@ -351,7 +354,6 @@
 			((bdng-is-scope? (car cur-env))
 			 (let ((sub-env (unbox (bdng->scope (car cur-env)))))
 				 (recurse sub-env)
-				 (printf "Recursing to next scope: ~v~n" (cdr cur-env))
 				 (recurse (cdr cur-env))))
 			; If the env entry is not a rule, skip it.
 			(else (recurse (cdr cur-env)))))
