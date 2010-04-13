@@ -52,7 +52,7 @@
 ; Initialize the environment.
 (define global-env '())
 (ruse-global-rule 'tag '(quote tag))
-(ruse-global-rule '(tag @t @v) '(builtin list t v))
+(ruse-global-rule '(tag @t1 @v) '(builtin list t1 v))
 (ruse-global-rule 'multiply-int '(quote multiply-int))
 (ruse-global-rule 'int '(quote int))
 (ruse-global-rule '(int  @x) '(tag int x))
@@ -101,7 +101,12 @@
 			(define (on-rplc-eval-fail)
 				(printf "Unable to evaluate replacement expression ~v~n" new-expr)
 				(on-fail))
-			(eval new-expr new-env on-scs on-rplc-eval-fail))
+			(printf "on-rule-scs new-expr=~v~n" new-expr)
+			(eval new-expr new-env
+						(lambda (rpl-val rpl-env)
+							(printf "  replacement=~v~n" rpl-val)
+							(on-scs rpl-val rpl-env))
+						on-rplc-eval-fail))
 		(printf "eval-base ~v~n" expr)
 		(cond
 			((symbol? expr)
@@ -119,6 +124,8 @@
 
 	; I'm stumped.
 	(define (fail expr env on-scs on-fail)
+		(on-fail)
+		(printf "Probably shouldn't get here.")
 		(on-err (format "Unknown value type (~v)." expr))
 		(printf "Shouldn't get here (1).~n"))
 
@@ -153,9 +160,10 @@
 
 (define (ruse-eval-quasiquote expr env on-scs on-fail on-err)
 	(define (recurse cur-expr)
+		(define (on-unquote-fail) (on-err (format "Failed to unquote: ~v." expr)))
 		(cond
 			((and (list? cur-expr) (eqv? 'unquote (car cur-expr)))
-			 (ruse-eval (cadr cur-expr) env on-scs on-fail on-err))
+			 (ruse-eval (cadr cur-expr) env on-scs on-unquote-fail on-err))
 			((list? cur-expr) (map recurse cur-expr))
 			(else cur-expr)))
 	(on-scs (recurse (cadr expr))))
@@ -171,6 +179,7 @@
 				(define (on-arg-scs val new-env) (set! rslt val))
 				(ruse-eval arg env on-arg-scs on-arg-fail on-err)
 				(list 'quote rslt)))
+		(printf "ruse-eval-builtin ~v~n" fm)
 		(let* ((val-fm (map eval-arg (cdr fm)))
 					 (bi-expr (cons (car fm) val-fm)))
 			(let ((bi-rslt (eval bi-expr eval-ns)))
@@ -178,14 +187,16 @@
 
 ; Evaluate dynamic form.
 (define (ruse-eval-eval expr env on-scs on-fail on-err)
+	(define (on-eval-fail) (on-err (format "Failed to eval dynamic form: ~v." expr)))
 	(let ((fm (cadr expr)))
-		(ruse-eval fm env on-scs on-fail on-err)))
+		(ruse-eval fm env on-scs on-eval-fail on-err)))
 
 ; Evaluate scope declaration.
 (define (ruse-eval-scope expr env on-scs on-fail on-err)
+	(define (on-scope-fail) (on-err (format "Failed to eval scope argument: ~v." expr)))
 	(let ((fm (cadr expr))
 				(scope-env (cons (make-scope-bdng (make-scope)) env)))
-		(ruse-eval fm scope-env on-scs on-fail on-err)))
+		(ruse-eval fm scope-env on-scs on-scope-fail on-err)))
 
 ; Apply the current environment to the form.
 (define (ruse-eval-apply-rules expr env on-scs on-fail on-err)
@@ -202,17 +213,19 @@
 	(when (not (list? (cadr expr))) (on-err "cond arguments not list."))
 	(let eval-cond ((cnd-pairs (cdr expr)))
 		(if (null? cnd-pairs)
-			(on-fail)
+			(on-err "Cond has no cases.")
 			(let* ((cnd-pair (car cnd-pairs))
 						 (cnd (car cnd-pair))
 						 (rslt (cadr cnd-pair)))
+				(define (on-rslt-fail) (on-err (format "Failed to eval cond result: ~v." rslt)))
 				(define (on-cond-scs cnd-val cond-env)
 					(if cnd-val
-						(ruse-eval rslt env (lambda (nval nenv) (on-scs nval nenv)) on-fail on-err)
+						(ruse-eval rslt env (lambda (nval nenv) (on-scs nval nenv)) on-rslt-fail on-err)
 						(eval-cond (cdr cnd-pairs))))
+				(define (on-cond-fail) (on-err (format "Failed to eval cond test: ~v." cnd)))
 				(if (eq? cnd 'else)
-					(ruse-eval rslt env on-scs on-fail on-err)
-					(ruse-eval cnd env on-cond-scs (lambda () (eval-cond (cdr cnd-pairs))) on-err))))))
+					(ruse-eval rslt env on-scs on-rslt-fail on-err)
+					(ruse-eval cnd env on-cond-scs on-cond-fail on-err))))))
 
 ; Pattern matching.
 (define (ptn-is-var? ptn)
@@ -220,6 +233,7 @@
 (define (ptn->var-name ptn)
 	(string->symbol (substring (symbol->string ptn) 1)))
 (define (match-sym ptn val bdngs on-scs on-fail)
+	(printf "  match-sym: (eqv? ~v ~v) == ~v~n" ptn val (eqv? ptn val))
 	(if (eqv? ptn val)
 		(on-scs bdngs)
 		(on-fail)))
@@ -235,8 +249,14 @@
 (define (match-ptn ptn val bdngs on-scs on-fail)
 	(printf "match-ptn:~n  ptn=~v~n  val=~v~n" ptn val)
 	(cond
-		((and (symbol? ptn) (ptn-is-var? ptn)) (match-var ptn val bdngs on-scs on-fail))
-		((symbol? ptn) (match-sym ptn val bdngs on-scs on-fail))
+		((and (symbol? ptn) (ptn-is-var? ptn))
+		 (begin
+			 (printf "  match var~n")
+			 (match-var ptn val bdngs on-scs on-fail)))
+		((symbol? ptn)
+		 (begin
+			 (printf "  match sym~n")
+			 (match-sym ptn val bdngs on-scs on-fail)))
 		((pair? ptn) (match-pair ptn val bdngs on-scs on-fail))
 		((and (null? ptn) (null? val)) (on-scs bdngs))
 		(else (on-fail))))
@@ -251,6 +271,7 @@
 				 (body (cdr templ))
 				 (on-match-scs
 					 (lambda (bdngs)
+						 (printf "on-match-scs~n")
 						 (let ((new-env rl-env))
 							 ; Add all the bindings from the match to the environment.
 							 (do-ec (: bdng bdngs)

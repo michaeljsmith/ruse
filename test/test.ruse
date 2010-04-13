@@ -7,8 +7,8 @@
 
 ;----------------------------------------------------------------------------
 ; Control structures.
-(=* (if @c @t @f)
-		(cond (c t) (else f)))
+(=* (if @c @tr @f)
+		(cond (c tr) (else f)))
 (= do-seq 'do-seq)
 (= (do-seq @x . @args)
 	 (do-seq args))
