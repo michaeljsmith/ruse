@@ -169,12 +169,27 @@
 			 (let/cc
 				 return
 				 (define (on-unquote-scs uq-val uq-env)
-					 (return uq-val))
+					 (return `(no-splice . ,uq-val)))
 				 (ruse-eval (cadr cur-expr) env on-unquote-scs on-unquote-fail on-err)))
-			((list? cur-expr) (map recurse cur-expr))
-			(else cur-expr)))
+			((and (list? cur-expr) (eqv? 'unquote-splicing (car cur-expr)))
+			 (let/cc
+				 return
+				 (define (on-unquote-scs uq-val uq-env)
+					 (return `(splice . ,uq-val)))
+				 (ruse-eval (cadr cur-expr) env on-unquote-scs on-unquote-fail on-err)))
+			((list? cur-expr)
+			 (cons
+				 'no-splice
+				 (let add-next ((pos cur-expr))
+					 (if (null? pos)
+						 null
+						 (let ((arg (recurse (car pos))))
+							 (if (eqv? 'splice (car arg))
+								 (append (cdr arg) (add-next (cdr pos)))
+								 (cons (cdr arg) (add-next (cdr pos)))))))))
+			(else (cons 'no-splice cur-expr))))
 	(printf "ruse-eval-quasiquote ~v~n" expr)
-	(let ((rslt (recurse (cadr expr))))
+	(let ((rslt (cdr (recurse (cadr expr)))))
 		(printf "quasiquote result: ~v (for ~v)~n" rslt expr)
 		(on-scs rslt env)))
 
@@ -203,9 +218,16 @@
 
 ; Evaluate dynamic form.
 (define (ruse-eval-eval expr env on-scs on-fail on-err)
-	(define (on-eval-fail) (on-err (format "Failed to eval dynamic form: ~v." expr)))
+	(define (on-eval-arg-scs dyn-val dyn-env)
+		(define (on-eval-fail) (on-err (format "Failed to eval dynamic form: ~v." dyn-val)))
+		(printf "ruse-eval: dynamic form: ~v~n" dyn-val)
+		(ruse-eval dyn-val dyn-env 
+							 (lambda (nval nenv)
+								 (printf "eval rslt: ~v (for ~v)~n" nval dyn-val)
+								 (on-scs nval nenv)) on-eval-fail on-err))
+	(define (on-eval-arg-fail) (on-err (format "Failed to eval dynamic form argument: ~v" expr)))
 	(let ((fm (cadr expr)))
-		(ruse-eval fm env on-scs on-eval-fail on-err)))
+		(ruse-eval fm env on-eval-arg-scs on-eval-arg-fail on-err)))
 
 ; Evaluate scope declaration.
 (define (ruse-eval-scope expr env on-scs on-fail on-err)
