@@ -84,13 +84,11 @@
 
 	; Try to expand any macros before continuing.
 	(define (expand-macros expr env on-scs on-fail)
-		(define (on-mac-scs val mac-env)
-			(eval val env on-scs on-fail))
 		(define (on-mac-fail)
 			(eval-base expr env on-scs on-fail))
-		(apply-env-macros-to-expr expr env on-mac-scs on-mac-fail on-err))
+		(ruse-expand-macros expr env on-scs on-mac-fail on-err))
 
-	; Evalute any core functions (eg builtin functions).
+	; Evaluate any core functions (eg builtin functions).
 	(define (eval-base expr env on-scs on-fail)
 		(define (on-base-fail)
 			(expand-rules expr env on-scs on-fail))
@@ -111,6 +109,12 @@
 
 	; Apply the function pipeline we have defined.
 	(eval expr env on-scs on-fail))
+
+; Try to expand any macros before continuing.
+(define (ruse-expand-macros expr env on-scs on-fail on-err)
+	(define (on-mac-scs val mac-env)
+		(ruse-eval val env on-scs on-fail on-err))
+	(apply-env-macros-to-expr expr env on-mac-scs on-fail on-err))
 
 ; Apply any rules that match the current expression.
 (define (ruse-expand-rules expr env on-scs on-fail on-err)
