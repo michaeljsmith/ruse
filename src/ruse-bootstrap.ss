@@ -98,32 +98,9 @@
 
 	; Apply any rules that match the current expression.
 	(define (expand-rules expr env on-scs on-fail)
-		(define (on-rule-fail)
+		(define (on-expand-fail)
 			(fail expr env on-scs on-fail))
-		(define (on-rule-scs new-expr new-env)
-			(define (on-rplc-eval-fail)
-				(printf "Unable to evaluate replacement expression ~v~n" new-expr)
-				(on-fail))
-			(printf "on-rule-scs new-expr=~v~n" new-expr)
-			(eval new-expr new-env
-						(lambda (rpl-val rpl-env)
-							(printf "  replacement=~v (for ~v)~n" rpl-val new-expr)
-							(on-scs rpl-val rpl-env))
-						on-rplc-eval-fail))
-		(printf "expand-rules ~v~n" expr)
-		(cond
-			((symbol? expr)
-			 (apply-env-to-expr expr env on-rule-scs on-rule-fail on-err))
-			((list? expr)
-			 (begin
-				 (let* ((sub-eval (lambda (sub)
-														(let/cc
-															return
-															(define (on-eval val expr) (return val))
-															(eval sub env on-eval on-rule-fail))))
-								(fm-exp (map sub-eval expr)))
-					 (apply-env-to-expr fm-exp env on-rule-scs on-fail on-err))))
-			(else (fail expr env on-scs on-fail))))
+		(ruse-expand-rules expr env on-scs on-expand-fail on-err))
 
 	; I'm stumped.
 	(define (fail expr env on-scs on-fail)
@@ -134,6 +111,35 @@
 
 	; Apply the function pipeline we have defined.
 	(eval expr env on-scs on-fail))
+
+; Apply any rules that match the current expression.
+(define (ruse-expand-rules expr env on-scs on-fail on-err)
+	(define (on-rule-fail)
+		(on-fail))
+	(define (on-rule-scs new-expr new-env)
+		(define (on-rplc-eval-fail)
+			(printf "Unable to evaluate replacement expression ~v~n" new-expr)
+			(on-fail))
+		(printf "on-rule-scs new-expr=~v~n" new-expr)
+		(ruse-eval new-expr new-env
+					(lambda (rpl-val rpl-env)
+						(printf "  replacement=~v (for ~v)~n" rpl-val new-expr)
+						(on-scs rpl-val rpl-env))
+					on-rplc-eval-fail on-err))
+	(printf "expand-rules ~v~n" expr)
+	(cond
+		((symbol? expr)
+		 (apply-env-to-expr expr env on-rule-scs on-rule-fail on-err))
+		((list? expr)
+		 (begin
+			 (let* ((sub-eval (lambda (sub)
+													(let/cc
+														return
+														(define (on-eval val expr) (return val))
+														(ruse-eval sub env on-eval on-rule-fail on-err))))
+							(fm-exp (map sub-eval expr)))
+				 (apply-env-to-expr fm-exp env on-rule-scs on-fail on-err))))
+		(else (on-fail))))
 
 (define (ruse-eval-base expr env on-scs on-fail on-err)
 	; Check whether the expression is a rule definition.
