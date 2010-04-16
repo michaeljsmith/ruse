@@ -60,64 +60,68 @@
 (ruse-global-rule '(multiply-int @x @y) '(int (builtin * x y)))
 
 ; Main evaluate function.
-(define (ruse-eval expr env on-scs on-fail on-err)
+(define (ruse-eval expr env calls on-scs on-fail on-err)
 
 	; Primary evaluation function.
-	(define (eval expr env on-scs on-fail)
-		(check-quote expr env on-scs on-fail))
+	(define (eval expr env calls on-scs on-fail)
+		(check-quote expr env calls on-scs on-fail))
 
 	; Check whether expression is quoted, if so return the value.
-	(define (check-quote expr env on-scs on-fail)
+	(define (check-quote expr env calls on-scs on-fail)
 		(if (and (list? expr) (eqv? (car expr) 'quote))
 			(begin
 				(printf "quoted value: ~v~n" (cadr expr))
 				(on-scs (cadr expr) env))
-			(check-quasiquote expr env on-scs on-fail)))
+			(check-quasiquote expr env calls on-scs on-fail)))
 
 	; Check whether the expression is quasiquoted.
-	(define (check-quasiquote expr env on-scs on-fail)
+	(define (check-quasiquote expr env calls on-scs on-fail)
 		(define (on-qq-fail)
-			(expand-macros expr env on-scs on-fail))
+			(expand-macros expr env calls on-scs on-fail))
 		(if (and (list? expr) (eqv? (car expr) 'quasiquote))
-			(ruse-eval-quasiquote expr env on-scs on-qq-fail on-err)
-			(expand-macros expr env on-scs on-fail)))
+			(ruse-eval-quasiquote expr env calls on-scs on-qq-fail on-err)
+			(expand-macros expr env calls on-scs on-fail)))
 
 	; Try to expand any macros before continuing.
-	(define (expand-macros expr env on-scs on-fail)
+	(define (expand-macros expr env calls on-scs on-fail)
 		(define (on-mac-fail)
-			(eval-base expr env on-scs on-fail))
-		(ruse-expand-macros expr env on-scs on-mac-fail on-err))
+			(eval-base expr env calls on-scs on-fail))
+		(ruse-expand-macros expr env calls on-scs on-mac-fail on-err))
 
 	; Evaluate any core functions (eg builtin functions).
-	(define (eval-base expr env on-scs on-fail)
+	(define (eval-base expr env calls on-scs on-fail)
 		(define (on-base-fail)
-			(expand-rules expr env on-scs on-fail))
-		(ruse-eval-base expr env on-scs on-base-fail on-err))
+			(expand-rules expr env calls on-scs on-fail))
+		(ruse-eval-base expr env calls on-scs on-base-fail on-err))
 
 	; Apply any rules that match the current expression.
-	(define (expand-rules expr env on-scs on-fail)
+	(define (expand-rules expr env calls on-scs on-fail)
 		(define (on-expand-fail)
-			(fail expr env on-scs on-fail))
-		(ruse-expand-rules expr env on-scs on-expand-fail on-err))
+			(fail expr env calls on-scs on-fail))
+		(ruse-expand-rules expr env calls on-scs on-expand-fail on-err))
 
 	; I'm stumped.
-	(define (fail expr env on-scs on-fail)
+	(define (fail expr env calls on-scs on-fail)
 		(on-fail)
 		(printf "Probably shouldn't get here.")
 		(on-err (format "Unknown value type (~v)." expr))
 		(printf "Shouldn't get here (1).~n"))
 
 	; Apply the function pipeline we have defined.
-	(eval expr env on-scs on-fail))
+	(eval expr env calls on-scs on-fail))
+
+; Call stack definitions.
+(define (make-call-stack-frame tp rl bdngs) (list tp rl bdngs))
+(define (with-call-stack-frame sf fn) (apply fn sf))
 
 ; Try to expand any macros before continuing.
-(define (ruse-expand-macros expr env on-scs on-fail on-err)
+(define (ruse-expand-macros expr env calls on-scs on-fail on-err)
 	(define (on-mac-scs val mac-env)
-		(ruse-eval val env on-scs on-fail on-err))
-	(apply-env-macros-to-expr expr env on-mac-scs on-fail on-err))
+		(ruse-eval val env calls on-scs on-fail on-err))
+	(apply-env-macros-to-expr expr env calls on-mac-scs on-fail on-err))
 
 ; Apply any rules that match the current expression.
-(define (ruse-expand-rules expr env on-scs on-fail on-err)
+(define (ruse-expand-rules expr env calls on-scs on-fail on-err)
 	(define (on-rule-fail)
 		(on-fail))
 	(define (on-rule-scs new-expr new-env)
@@ -125,7 +129,7 @@
 			(printf "Unable to evaluate replacement expression ~v~n" new-expr)
 			(on-fail))
 		(printf "on-rule-scs new-expr=~v~n" new-expr)
-		(ruse-eval new-expr new-env
+		(ruse-eval new-expr new-env calls
 					(lambda (rpl-val rpl-env)
 						(printf "  replacement=~v (for ~v)~n" rpl-val new-expr)
 						(on-scs rpl-val rpl-env))
@@ -133,45 +137,45 @@
 	(printf "expand-rules ~v~n" expr)
 	(cond
 		((symbol? expr)
-		 (apply-env-to-expr expr env on-rule-scs on-rule-fail on-err))
+		 (apply-env-to-expr expr env calls on-rule-scs on-rule-fail on-err))
 		((list? expr)
 		 (begin
 			 (let* ((sub-eval (lambda (sub)
 													(let/cc
 														return
 														(define (on-eval val expr) (return val))
-														(ruse-eval sub env on-eval on-rule-fail on-err))))
+														(ruse-eval sub env calls on-eval on-rule-fail on-err))))
 							(fm-exp (map sub-eval expr)))
-				 (apply-env-to-expr fm-exp env on-rule-scs on-fail on-err))))
+				 (apply-env-to-expr fm-exp env calls on-rule-scs on-fail on-err))))
 		(else (on-fail))))
 
-(define (ruse-eval-base expr env on-scs on-fail on-err)
+(define (ruse-eval-base expr env calls on-scs on-fail on-err)
 	; Check whether the expression is a rule definition.
 	(cond
 		; Handle requests to evaluate form as a scheme form.
 		((and (list? expr) (eqv? (car expr) 'builtin))
-		 (ruse-eval-builtin expr env on-scs on-fail on-err))
+		 (ruse-eval-builtin expr env calls on-scs on-fail on-err))
 		; Handle requests to evaluate dynamic form.
 		((and (list? expr) (eqv? (car expr) 'eval))
-		 (ruse-eval-eval expr env on-scs on-fail on-err))
+		 (ruse-eval-eval expr env calls on-scs on-fail on-err))
 		((and (list? expr) (eqv? (car expr) 'scope))
-		 (ruse-eval-scope expr env on-scs on-fail on-err))
+		 (ruse-eval-scope expr env calls on-scs on-fail on-err))
 		; Handle conditional requests.
 		((and (list? expr) (eqv? (car expr) 'cond))
-		 (ruse-eval-cond expr env on-scs on-fail on-err))
+		 (ruse-eval-cond expr env calls on-scs on-fail on-err))
 		; Handle rule definitions.
 		((and (list? expr) (eqv? (car expr) '=))
-		 (ruse-eval-rule-def expr env on-scs on-fail on-err))
+		 (ruse-eval-rule-def expr env calls on-scs on-fail on-err))
 		; Handle macro definitions.
 		((and (list? expr) (eqv? (car expr) '=*))
-		 (ruse-eval-macro-def expr env on-scs on-fail on-err))
+		 (ruse-eval-macro-def expr env calls on-scs on-fail on-err))
 		; Handle integer literals by returning them as is.
 		((integer? expr) (on-scs expr env))
 		; Handle string literals by returning them as is.
 		((string? expr) (on-scs expr env))
 		(else (on-fail))))
 
-(define (ruse-eval-quasiquote expr env on-scs on-fail on-err)
+(define (ruse-eval-quasiquote expr env calls on-scs on-fail on-err)
 	(define (recurse cur-expr)
 		(define (on-unquote-fail) (on-err (format "Failed to unquote: ~v." expr)))
 		(cond
@@ -180,13 +184,13 @@
 				 return
 				 (define (on-unquote-scs uq-val uq-env)
 					 (return `(no-splice . ,uq-val)))
-				 (ruse-eval (cadr cur-expr) env on-unquote-scs on-unquote-fail on-err)))
+				 (ruse-eval (cadr cur-expr) env calls on-unquote-scs on-unquote-fail on-err)))
 			((and (list? cur-expr) (eqv? 'unquote-splicing (car cur-expr)))
 			 (let/cc
 				 return
 				 (define (on-unquote-scs uq-val uq-env)
 					 (return `(splice . ,uq-val)))
-				 (ruse-eval (cadr cur-expr) env on-unquote-scs on-unquote-fail on-err)))
+				 (ruse-eval (cadr cur-expr) env calls on-unquote-scs on-unquote-fail on-err)))
 			((list? cur-expr)
 			 (cons
 				 'no-splice
@@ -206,7 +210,7 @@
 ; Evaluate using Scheme.
 (define-namespace-anchor ns-anchor)
 (define eval-ns (namespace-anchor->namespace ns-anchor))
-(define (ruse-eval-builtin expr env on-scs on-fail on-err)
+(define (ruse-eval-builtin expr env calls on-scs on-fail on-err)
 	(let ((fm (cdr expr)))
 		(define (eval-arg arg)
 			(list
@@ -218,7 +222,7 @@
 						(printf "on-arg-scs: ~v~n" val)
 						(arg-done val))
 					(printf "  eval builtin arg: env = ~v~n" env)
-					(ruse-eval arg env on-arg-scs on-arg-fail on-err))))
+					(ruse-eval arg env calls on-arg-scs on-arg-fail on-err))))
 		(printf "ruse-eval-builtin ~v~n" fm)
 		(let* ((val-fm (map eval-arg (cdr fm)))
 					 (bi-expr (cons (car fm) val-fm)))
@@ -227,7 +231,7 @@
 				(on-scs bi-rslt env)))))
 
 ; Evaluate dynamic form.
-(define (ruse-eval-eval expr env on-scs on-fail on-err)
+(define (ruse-eval-eval expr env calls on-scs on-fail on-err)
 	(define (on-eval-arg-scs dyn-val dyn-env)
 		(define (on-eval-fail) (on-err (format "Failed to eval dynamic form: ~v." dyn-val)))
 		(printf "ruse-eval: dynamic form: ~v~n" dyn-val)
@@ -237,18 +241,18 @@
 								 (on-scs nval nenv)) on-eval-fail on-err))
 	(define (on-eval-arg-fail) (on-err (format "Failed to eval dynamic form argument: ~v" expr)))
 	(let ((fm (cadr expr)))
-		(ruse-eval fm env on-eval-arg-scs on-eval-arg-fail on-err)))
+		(ruse-eval fm env calls on-eval-arg-scs on-eval-arg-fail on-err)))
 
 ; Evaluate scope declaration.
-(define (ruse-eval-scope expr env on-scs on-fail on-err)
+(define (ruse-eval-scope expr env calls on-scs on-fail on-err)
 	(define (on-scope-fail) (on-err (format "Failed to eval scope argument: ~v." expr)))
 	(let ((fm (cadr expr))
 				(scope-env (cons (make-scope-bdng (make-scope)) env)))
-		(ruse-eval fm scope-env (lambda (nval nexpr)
+		(ruse-eval fm scope-env calls (lambda (nval nexpr)
 															(printf "scope-env scs~n") (on-scs nval nexpr)) on-scope-fail on-err)))
 
 ; Evaluate conditional expression.
-(define (ruse-eval-cond expr env on-scs on-fail on-err)
+(define (ruse-eval-cond expr env calls on-scs on-fail on-err)
 	(when (not (list? (cadr expr))) (on-err "cond arguments not list."))
 	(let eval-cond ((cnd-pairs (cdr expr)))
 		(if (null? cnd-pairs)
@@ -261,13 +265,13 @@
 					(define (on-rslt-fail) (on-err (format "Failed to eval cond result: ~v." rslt)))
 					(define (on-cond-scs cnd-val cond-env)
 						(if cnd-val
-							(ruse-eval rslt env on-scs on-rslt-fail on-err)
+							(ruse-eval rslt env calls on-scs on-rslt-fail on-err)
 							(eval-cond (cdr cnd-pairs)))
 						(exit))
 					(define (on-cond-fail) (on-err (format "Failed to eval cond test: ~v." cnd)))
 					(if (eq? cnd 'else)
-						(ruse-eval rslt env on-scs on-rslt-fail on-err)
-						(ruse-eval cnd env on-cond-scs on-cond-fail on-err)))))))
+						(ruse-eval rslt env calls on-scs on-rslt-fail on-err)
+						(ruse-eval cnd env calls on-cond-scs on-cond-fail on-err)))))))
 
 ; Pattern matching.
 (define (ptn-is-var? ptn)
@@ -305,7 +309,7 @@
 
 ; Function taking a form (whose arguments have already been evaluated) and
 ; attempting to apply a specific rule to it.
-(define (apply-rule rule expr env on-scs on-fail on-err)
+(define (apply-rule rule expr env calls on-scs on-fail on-err)
 	; Extract the pattern and the body from the rule.
 	(let* ((templ (car rule))
 				 (rl-env (cdr rule))
@@ -323,7 +327,7 @@
 		(match-ptn ptn expr '() on-match-scs on-fail)))
 
 ; Function taking a form and attempting to apply a specific macro to it.
-(define (apply-macro mac fm env on-scs on-fail on-err)
+(define (apply-macro mac fm env calls on-scs on-fail on-err)
 	; Extract the pattern and the body from the rule.
 	(let* ((templ (car mac))
 				 (mac-env (cdr mac))
@@ -369,7 +373,7 @@
 
 ; Function taking an expression and the current environment and applying
 ; all the bindings to the expression until one matches.
-(define (apply-env-to-expr expr env on-scs on-fail on-err)
+(define (apply-env-to-expr expr env calls on-scs on-fail on-err)
 	(let recurse ((cur-env env))
 		(cond
 			; Have we tried every entry in the env?
@@ -379,7 +383,7 @@
 			 ; Attempt to apply the rule to the expression. If it fails,
 			 ; try the next one.
 			 (apply-rule (bdng->rule (car cur-env)) expr env
-									 on-scs
+									 calls on-scs
 									 (lambda () (recurse (cdr cur-env)))
 									 on-err))
 			; Check whether the current entry is a sub-scope.
@@ -395,7 +399,7 @@
 
 ; Function taking an (unevaluated) expression and the current environment and applying
 ; all the macros in the current environment to the expression until one matches.
-(define (apply-env-macros-to-expr expr env on-scs on-fail on-err)
+(define (apply-env-macros-to-expr expr env calls on-scs on-fail on-err)
 	(let recurse ((cur-env env))
 		(cond
 			; Have we tried every entry in the env?
@@ -405,7 +409,7 @@
 			 ; Attempt to apply the macro to the expression. If it fails,
 			 ; try the next one.
 			 (apply-macro (bdng->rule (car cur-env)) expr env
-										on-scs
+										calls on-scs
 										(lambda () (recurse (cdr cur-env)))
 										on-err))
 			; Check whether the current entry is a sub-scope.
@@ -489,7 +493,7 @@
 		(set-box! top-scope (cons bdng (unbox top-scope)))))
 
 ; Evaluate a rule definition (add it to the environment).
-(define (ruse-eval-rule-def expr env on-scs on-fail on-err)
+(define (ruse-eval-rule-def expr env calls on-scs on-fail on-err)
 	(printf "ruse-eval-rule-def ~v~n" expr)
 	(let ((rl-tpl (compile-rule-def (cdr expr))))
 		(printf "  compiled: ~v~n" rl-tpl)
@@ -500,7 +504,7 @@
 			(on-fail))))
 
 ; Evaluate a macro definition (add it to the environment).
-(define (ruse-eval-macro-def expr env on-scs on-fail on-err)
+(define (ruse-eval-macro-def expr env calls on-scs on-fail on-err)
 	(let ((mac-tpl (compile-macro-def (cdr expr))))
 		(if mac-tpl
 			(let ((mac (cons mac-tpl env)))
@@ -535,7 +539,7 @@
 						(set! fm (read p))
 						(unless (eof-object? fm)
 							(begin
-								(ruse-eval fm file-env on-eval-scs on-eval-fail on-eval-err)
+								(ruse-eval fm file-env null on-eval-scs on-eval-fail on-eval-err)
 								(printf "Shouldn't get here (2).~n"))))
 					(unless (eof-object? fm)
 						(read-next-data))))
