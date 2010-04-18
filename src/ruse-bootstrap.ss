@@ -45,9 +45,9 @@
 (define (ruse-global-env bdng)
 	(set! global-env (cons bdng global-env)))
 (define (ruse-global-rule ptn bd)
-	(ruse-global-env `(rule (,ptn . ,bd) . ,global-env)))
+	(ruse-global-env `(rule (,ptn . ,bd) ,global-env (<builtin> 1 1))))
 (define (ruse-global-macro ptn bd)
-	(ruse-global-env `(macro (,ptn . ,bd) . ,global-env)))
+	(ruse-global-env `(macro (,ptn . ,bd) ,global-env (<builtin> 1 1))))
 
 ; Initialize the environment.
 (define global-env '())
@@ -120,6 +120,10 @@
 				(car cur-calls)
 				(lambda (tp rl bdngs)
 					(let* ((tmpl (car rl))
+								 (spos (caddr rl))
+								 (file (car spos))
+								 (line (caadr spos))
+								 (col (caadr spos))
 								 (ptn (car tmpl))
 								 (body (cdr tmpl))
 								 (hdr
@@ -127,7 +131,8 @@
 										((eqv? 'rule tp) 'rule)
 										((eqv? 'macro tp) 'macro)
 										(else (string->symbol (format "UNKNOWN FRAME TYPE(~a)" tp))))))
-						(printf "~a (~a)\n" ptn hdr))))
+						(printf "~a(~a,~a):~n" file line col)
+						(printf "        ~a (~a)\n" ptn hdr))))
 			(print-stack (cdr cur-calls)))))
 
 ; Try to expand any macros before continuing.
@@ -307,7 +312,7 @@
 (define (apply-rule rule expr env calls spos on-scs on-fail on-err)
 	; Extract the pattern and the body from the rule.
 	(let* ((templ (car rule))
-				 (rl-env (cdr rule))
+				 (rl-env (cadr rule))
 				 (ptn (car templ))
 				 (body (cdr templ))
 				 (on-match-scs
@@ -325,7 +330,7 @@
 (define (apply-macro mac fm env calls spos on-scs on-fail on-err)
 	; Extract the pattern and the body from the rule.
 	(let* ((templ (car mac))
-				 (mac-env (cdr mac))
+				 (mac-env (cadr mac))
 				 (ptn (car templ))
 				 (body (cdr templ))
 				 (on-match-scs
@@ -489,7 +494,7 @@
 (define (ruse-eval-rule-def expr env calls spos on-scs on-fail on-err)
 	(let ((rl-tpl (compile-rule-def (cdr expr))))
 		(if rl-tpl
-			(let ((rl (cons rl-tpl env)))
+			(let ((rl (list rl-tpl env spos)))
 				(ruse-add-to-current-scope (cons 'rule rl) env calls spos on-err)
 				(on-scs 'rule-def env calls spos))
 			(on-fail))))
@@ -498,7 +503,7 @@
 (define (ruse-eval-macro-def expr env calls spos on-scs on-fail on-err)
 	(let ((mac-tpl (compile-macro-def (cdr expr))))
 		(if mac-tpl
-			(let ((mac (cons mac-tpl env)))
+			(let ((mac (list mac-tpl env spos)))
 				(ruse-add-to-current-scope (cons 'macro mac) env calls spos on-err)
 				(on-scs 'mac-def env calls spos))
 			(on-fail))))
@@ -602,6 +607,10 @@
 				(printf "No input files specified.~n")))
 		(when should-run
 			(ruse-load-files in-files))))
+
+;(define (car p)
+;	(printf "car ~v~n" p)
+;	(car p))
 
 ; Run program - pass command line to main function.
 (let ((argv (vector->list (current-command-line-arguments))))
