@@ -113,7 +113,7 @@
 (define (with-call-stack-frame sf fn) (apply fn sf))
 
 ; Print out a callstack.
-(define (ruse-print-call-stack calls)
+(define (ruse-print-call-stack calls spos)
 	(let print-stack ((cur-calls calls))
 		(unless (null? cur-calls) 
 			(with-call-stack-frame
