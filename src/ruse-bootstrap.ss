@@ -64,7 +64,12 @@
 
 	; Primary evaluation function.
 	(define (eval expr env calls spos on-scs on-fail)
-		(check-quote expr env calls spos on-scs on-fail))
+		(check-syntax expr env calls spos on-scs on-fail))
+
+	(define (check-syntax expr env calls spos on-scs on-fail)
+		(if (syntax? expr)
+			(ruse-eval-syntax expr env calls spos on-scs on-fail on-err)
+			(check-quote expr env calls spos on-scs on-fail)))
 
 	; Check whether expression is quoted, if so return the value.
 	(define (check-quote expr env calls spos on-scs on-fail)
@@ -189,6 +194,13 @@
 		; Handle string literals by returning them as is.
 		((string? expr) (on-scs expr env calls spos))
 		(else (on-fail))))
+
+; Reading the source file gives us syntax objects, which contain a form decorated with syntax information.
+; To evaluate them, we update the source file location and evaluate the content.
+(define (ruse-eval-syntax expr env calls spos on-scs on-fail on-err)
+	(let ((new-spos
+					`(,(syntax-source expr) (,(syntax-line expr) ,(syntax-column expr)))))
+		(ruse-eval (syntax-e expr) env calls new-spos on-scs on-fail on-err)))
 
 (define (ruse-eval-quasiquote expr env calls spos on-scs on-fail on-err)
 	(define (recurse cur-expr)
@@ -514,8 +526,9 @@
 				(errors 0)
 				(file-env env))
 		(define (load-from-port p)
+			(port-count-lines! p)
 			(let read-next-data ()
-				(let ((fm null))
+				(let ((stx null))
 					(let/cc
 						skip-current-data
 						(define (on-eval-scs val new-env calls spos)
@@ -525,21 +538,21 @@
 						(define (on-eval-fail)
 							(set! rslt (void))
 							(set! errors (+ 1 errors))
-							(printf "Unable to evaluate form: ~v~n" fm)
+							(printf "Unable to evaluate form: ~v~n" (syntax->datum stx))
 							(skip-current-data))
 						(define (on-eval-err msg calls spos)
 							(set! rslt (void))
 							(set! errors (+ 1 errors))
-							(printf "Error while evaluating form: ~v~n  Message: ~a~n~n" fm msg)
+							(printf "Error while evaluating form: ~v~n  Message: ~a~n~n" (syntax->datum stx) msg)
 							(ruse-print-call-stack calls)
 							(printf "~n")
 							(skip-current-data))
-						(set! fm (read p))
-						(unless (eof-object? fm)
+						(set! stx (read-syntax f p))
+						(unless (eof-object? stx)
 							(begin
-								(ruse-eval fm file-env null '("FILENAME" (1 1)) on-eval-scs on-eval-fail on-eval-err)
+								(ruse-eval stx file-env null '("FILENAME" (1 1)) on-eval-scs on-eval-fail on-eval-err)
 								(printf "Shouldn't get here (2).~n"))))
-					(unless (eof-object? fm)
+					(unless (eof-object? stx)
 						(read-next-data))))
 			(if (> errors 0)
 				(on-err (format "File contained errors (~v)." errors))
