@@ -64,48 +64,53 @@
 
 	; Primary evaluation function.
 	(define (eval expr env calls spos on-scs on-fail)
-		(check-syntax expr env calls spos on-scs on-fail))
+		(let ((hdr
+						(cond
+							((not (list? expr)) (void))
+							((syntax? (car expr)) (syntax-e (car expr)))
+							(else (car expr)))))
+			(check-syntax hdr expr env calls spos on-scs on-fail)))
 
-	(define (check-syntax expr env calls spos on-scs on-fail)
+	(define (check-syntax hdr expr env calls spos on-scs on-fail)
 		(if (syntax? expr)
 			(ruse-eval-syntax expr env calls spos on-scs on-fail on-err)
-			(check-quote expr env calls spos on-scs on-fail)))
+			(check-quote hdr expr env calls spos on-scs on-fail)))
 
 	; Check whether expression is quoted, if so return the value.
-	(define (check-quote expr env calls spos on-scs on-fail)
-		(if (and (list? expr) (eqv? (car expr) 'quote))
+	(define (check-quote hdr expr env calls spos on-scs on-fail)
+		(if (eqv? hdr 'quote)
 			(on-scs (cadr expr) env calls spos)
-			(check-quasiquote expr env calls spos on-scs on-fail)))
+			(check-quasiquote hdr expr env calls spos on-scs on-fail)))
 
 	; Check whether the expression is quasiquoted.
-	(define (check-quasiquote expr env calls spos on-scs on-fail)
-		(define (on-qq-fail)
-			(expand-macros expr env calls spos on-scs on-fail))
-		(if (and (list? expr) (eqv? (car expr) 'quasiquote))
+	(define (check-quasiquote hdr expr env calls spos on-scs on-fail)
+		(define (on-qq-fail fcalls fspos)
+			(expand-macros hdr expr env calls spos on-scs on-fail))
+		(if (eqv? hdr 'quasiquote)
 			(ruse-eval-quasiquote expr env calls spos on-scs on-qq-fail on-err)
-			(expand-macros expr env calls spos on-scs on-fail)))
+			(expand-macros hdr expr env calls spos on-scs on-fail)))
 
 	; Try to expand any macros before continuing.
-	(define (expand-macros expr env calls spos on-scs on-fail)
-		(define (on-mac-fail)
-			(eval-base expr env calls spos on-scs on-fail))
+	(define (expand-macros hdr expr env calls spos on-scs on-fail)
+		(define (on-mac-fail fcalls fspos)
+			(eval-base hdr expr env calls spos on-scs on-fail))
 		(ruse-expand-macros expr env calls spos on-scs on-mac-fail on-err))
 
 	; Evaluate any core functions (eg builtin functions).
-	(define (eval-base expr env calls spos on-scs on-fail)
-		(define (on-base-fail)
-			(expand-rules expr env calls spos on-scs on-fail))
+	(define (eval-base hdr expr env calls spos on-scs on-fail)
+		(define (on-base-fail fcalls fspos)
+			(expand-rules hdr expr env calls spos on-scs on-fail))
 		(ruse-eval-base expr env calls spos on-scs on-base-fail on-err))
 
 	; Apply any rules that match the current expression.
-	(define (expand-rules expr env calls spos on-scs on-fail)
-		(define (on-expand-fail)
-			(fail expr env calls spos on-scs on-fail))
+	(define (expand-rules hdr expr env calls spos on-scs on-fail)
+		(define (on-expand-fail fcalls fspos)
+			(fail hdr expr env calls spos on-scs on-fail))
 		(ruse-expand-rules expr env calls spos on-scs on-expand-fail on-err))
 
 	; I'm stumped.
-	(define (fail expr env calls spos on-scs on-fail)
-		(on-fail)
+	(define (fail hdr expr env calls spos on-scs on-fail)
+		(on-fail calls spos)
 		(printf "Probably shouldn't get here.")
 		(on-err (format "Unknown value type (~v)." expr) calls spos)
 		(printf "Shouldn't get here (1).~n"))
@@ -154,12 +159,12 @@
 
 ; Apply any rules that match the current expression.
 (define (ruse-expand-rules expr env calls spos on-scs on-fail on-err)
-	(define (on-rule-fail)
-		(on-fail))
+	(define (on-rule-fail fcalls fspos)
+		(on-fail calls spos))
 	(define (on-rule-scs new-expr new-env new-calls new-spos)
-		(define (on-rplc-eval-fail)
-			(printf "Unable to evaluate replacement expression ~v~n" new-expr)
-			(on-fail))
+		(define (on-rplc-eval-fail fcalls fspos)
+			(on-err (format "Unable to evaluate replacement expression ~v~n" new-expr) fcalls fspos))
+		(printf "Replacement expression = ~v (~v)~n" new-expr (syntax-e new-expr))
 		(ruse-eval new-expr new-env new-calls new-spos on-scs on-rplc-eval-fail on-err))
 	(cond
 		((symbol? expr)
@@ -173,35 +178,39 @@
 														(ruse-eval sub env calls spos on-eval on-rule-fail on-err))))
 							(fm-exp (map sub-eval expr)))
 				 (apply-env-to-expr fm-exp env calls spos on-rule-scs on-fail on-err))))
-		(else (on-fail))))
+		(else (on-fail calls spos))))
 
 (define (ruse-eval-base expr env calls spos on-scs on-fail on-err)
-	; Check whether the expression is a rule definition.
-	(cond
-		; Handle requests to evaluate form as a scheme form.
-		((and (list? expr) (eqv? (car expr) 'builtin))
-		 (ruse-eval-builtin expr env calls spos on-scs on-fail on-err))
-		; Handle requests to evaluate dynamic form.
-		((and (list? expr) (eqv? (car expr) 'eval))
-		 (ruse-eval-eval expr env calls spos on-scs on-fail on-err))
-		((and (list? expr) (eqv? (car expr) 'scope))
-		 (ruse-eval-scope expr env calls spos on-scs on-fail on-err))
-		; Handle conditional requests.
-		((and (list? expr) (eqv? (car expr) 'cond))
-		 (ruse-eval-cond expr env calls spos on-scs on-fail on-err))
-		; Handle rule definitions.
-		((and (list? expr) (or (eqv? (car expr) '=)
-													 (and (syntax? (car expr)) (eqv? '= (syntax-e (car expr))))))
-		 (ruse-eval-rule-def expr env calls spos on-scs on-fail on-err))
-		; Handle macro definitions.
-		((and (list? expr) (or (eqv? (car expr) '=)
-													 (and (syntax? (car expr)) (eqv? '=* (syntax-e (car expr))))))
-		 (ruse-eval-macro-def expr env calls spos on-scs on-fail on-err))
-		; Handle integer literals by returning them as is.
-		((integer? expr) (on-scs expr env calls spos))
-		; Handle string literals by returning them as is.
-		((string? expr) (on-scs expr env calls spos))
-		(else (on-fail))))
+	(let ((hdr
+					(cond
+						((not (list? expr)) (void))
+						((syntax? (car expr)) (syntax-e (car expr)))
+						(else (car expr)))))
+		; Check whether the expression is a rule definition.
+		(cond
+			; Handle requests to evaluate form as a scheme form.
+			((eqv? hdr 'builtin)
+			 (ruse-eval-builtin expr env calls spos on-scs on-fail on-err))
+			; Handle requests to evaluate dynamic form.
+			((eqv? hdr 'eval)
+			 (ruse-eval-eval expr env calls spos on-scs on-fail on-err))
+			; Handle requests to evaluate in a sub-scope.
+			((eqv? hdr 'scope)
+			 (ruse-eval-scope expr env calls spos on-scs on-fail on-err))
+			; Handle conditional requests.
+			((eqv? hdr 'cond)
+			 (ruse-eval-cond expr env calls spos on-scs on-fail on-err))
+			; Handle rule definitions.
+			((eqv? hdr '=)
+			 (ruse-eval-rule-def expr env calls spos on-scs on-fail on-err))
+			; Handle macro definitions.
+			((eqv? hdr '=*)
+			 (ruse-eval-macro-def expr env calls spos on-scs on-fail on-err))
+			; Handle integer literals by returning them as is.
+			((integer? expr) (on-scs expr env calls spos))
+			; Handle string literals by returning them as is.
+			((string? expr) (on-scs expr env calls spos))
+			(else (on-fail calls spos)))))
 
 ; Reading the source file gives us syntax objects, which contain a form decorated with syntax information.
 ; To evaluate them, we update the source file location and evaluate the content.
@@ -212,7 +221,7 @@
 
 (define (ruse-eval-quasiquote expr env calls spos on-scs on-fail on-err)
 	(define (recurse cur-expr)
-		(define (on-unquote-fail) (on-err (format "Failed to unquote: ~v." expr) calls spos))
+		(define (on-unquote-fail fcalls fspos) (on-err (format "Failed to unquote: ~v." expr) calls spos))
 		(cond
 			((and (list? cur-expr) (eqv? 'unquote (car cur-expr)))
 			 (let/cc
@@ -250,7 +259,7 @@
 				'quote
 				(let/cc
 					arg-done
-					(define (on-arg-fail) (on-err (format "Builtin eval failed to evaluate argument ~v." arg) calls spos))
+					(define (on-arg-fail fcalls fspos) (on-err (format "Builtin eval failed to evaluate argument ~v." arg) calls spos))
 					(define (on-arg-scs val new-env new-calls new-spos)
 						(arg-done val))
 					(ruse-eval arg env calls spos on-arg-scs on-arg-fail on-err))))
@@ -262,17 +271,17 @@
 ; Evaluate dynamic form.
 (define (ruse-eval-eval expr env calls spos on-scs on-fail on-err)
 	(define (on-eval-arg-scs dyn-val dyn-env dyn-calls dyn-spos)
-		(define (on-eval-fail) (on-err (format "Failed to eval dynamic form: ~v." dyn-val) dyn-calls dyn-spos))
+		(define (on-eval-fail fcalls fspos) (on-err (format "Failed to eval dynamic form: ~v." dyn-val) dyn-calls dyn-spos))
 		(ruse-eval dyn-val dyn-env calls spos
 							 (lambda (nval nenv)
 								 (on-scs nval nenv calls spos)) on-eval-fail on-err))
-	(define (on-eval-arg-fail) (on-err (format "Failed to eval dynamic form argument: ~v" expr) calls spos))
+	(define (on-eval-arg-fail fcalls fspos) (on-err (format "Failed to eval dynamic form argument: ~v" expr) calls spos))
 	(let ((fm (cadr expr)))
 		(ruse-eval fm env calls spos on-eval-arg-scs on-eval-arg-fail on-err)))
 
 ; Evaluate scope declaration.
 (define (ruse-eval-scope expr env calls spos on-scs on-fail on-err)
-	(define (on-scope-fail) (on-err (format "Failed to eval scope argument: ~v." expr) calls spos))
+	(define (on-scope-fail fcalls fspos) (on-err (format "Failed to eval scope argument: ~v." expr) calls spos))
 	(let ((fm (cadr expr))
 				(scope-env (cons (make-scope-bdng (make-scope)) env)))
 		(ruse-eval fm scope-env calls spos on-scs on-scope-fail on-err)))
@@ -288,13 +297,13 @@
 						 (rslt (cadr cnd-pair)))
 				(let/cc
 					exit
-					(define (on-rslt-fail) (on-err (format "Failed to eval cond result: ~v." rslt) calls spos))
+					(define (on-rslt-fail fcalls fspos) (on-err (format "Failed to eval cond result: ~v." rslt) calls spos))
 					(define (on-cond-scs cnd-val cond-env cond-calls cond-spos)
 						(if cnd-val
 							(ruse-eval rslt env calls spos on-scs on-rslt-fail on-err)
 							(eval-cond (cdr cnd-pairs)))
 						(exit))
-					(define (on-cond-fail) (on-err (format "Failed to eval cond test: ~v." cnd) calls spos))
+					(define (on-cond-fail fcalls fspos) (on-err (format "Failed to eval cond test: ~v." cnd) calls spos))
 					(if (eq? cnd 'else)
 						(ruse-eval rslt env calls spos on-scs on-rslt-fail on-err)
 						(ruse-eval cnd env calls spos on-cond-scs on-cond-fail on-err)))))))
@@ -343,9 +352,12 @@
 							 (do-ec (: bdng bdngs)
 											(set! new-env (cons `(rule (,(car bdng) . (quote ,(cdr bdng))) () rl-spos) new-env)))
 							 (on-scs body new-env
-											 (cons (make-call-stack-frame 'rule rule bdngs) calls) rl-spos)))))
+											 (cons (make-call-stack-frame 'rule rule bdngs) calls) rl-spos))))
+				 (on-match-fail
+					 (lambda ()
+						 (on-fail calls spos))))
 		; Using the handlers we have defined, attempt to match the pattern.
-		(match-ptn ptn expr '() on-match-scs on-fail)))
+		(match-ptn ptn expr '() on-match-scs on-match-fail)))
 
 ; Function taking a form and attempting to apply a specific macro to it.
 (define (apply-macro mac fm env calls spos on-scs on-fail on-err)
@@ -406,7 +418,7 @@
 			 ; try the next one.
 			 (apply-rule (bdng->rule (car cur-env)) expr env
 									 calls spos on-scs
-									 (lambda () (recurse (cdr cur-env)))
+									 (lambda (fcalls fspos) (recurse (cdr cur-env)))
 									 on-err))
 			; Check whether the current entry is a sub-scope.
 			((bdng-is-scope? (car cur-env))
@@ -417,7 +429,7 @@
 			(else (recurse (cdr cur-env)))))
 
 	; We found no matching rules, so we failed.
-	(on-fail))
+	(on-fail calls spos))
 
 ; Function taking an (unevaluated) expression and the current environment and applying
 ; all the macros in the current environment to the expression until one matches.
@@ -443,7 +455,7 @@
 			(else (recurse (cdr cur-env)))))
 
 	; We found no matching macros, so we failed.
-	(on-fail))
+	(on-fail calls spos))
 
 ; Compile a rule definition into an internal format.
 (define (compile-rule-def rl)
@@ -523,7 +535,7 @@
 			(let ((rl (list rl-tpl env spos)))
 				(ruse-add-to-current-scope (cons 'rule rl) env calls spos on-err)
 				(on-scs 'rule-def env calls spos))
-			(on-fail))))
+			(on-fail calls spos))))
 
 ; Evaluate a macro definition (add it to the environment).
 (define (ruse-eval-macro-def expr env calls spos on-scs on-fail on-err)
@@ -532,7 +544,7 @@
 			(let ((mac (list mac-tpl env spos)))
 				(ruse-add-to-current-scope (cons 'macro mac) env calls spos on-err)
 				(on-scs 'mac-def env calls spos))
-			(on-fail))))
+			(on-fail calls spos))))
 
 ; Execute a given file.
 (define (ruse-load-file f env on-scs on-err)
@@ -549,7 +561,7 @@
 							(set! rslt val)
 							(set! file-env new-env)
 							(skip-current-data))
-						(define (on-eval-fail)
+						(define (on-eval-fail fcalls fspos)
 							(set! rslt (void))
 							(set! errors (+ 1 errors))
 							(printf "Unable to evaluate form: ~v~n" (syntax->datum stx))
