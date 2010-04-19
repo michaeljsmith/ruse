@@ -79,7 +79,9 @@
 	; Check whether expression is quoted, if so return the value.
 	(define (check-quote hdr expr env calls spos on-scs on-fail)
 		(if (eqv? hdr 'quote)
-			(on-scs (cadr expr) env calls spos)
+			(let* ((quote-stx (cadr expr))
+						 (val (if (syntax? quote-stx) (syntax->datum quote-stx) quote-stx)))
+				(on-scs val env calls spos))
 			(check-quasiquote hdr expr env calls spos on-scs on-fail)))
 
 	; Check whether the expression is quasiquoted.
@@ -160,11 +162,11 @@
 ; Apply any rules that match the current expression.
 (define (ruse-expand-rules expr env calls spos on-scs on-fail on-err)
 	(define (on-rule-fail fcalls fspos)
-		(on-fail calls spos))
+		(on-fail fcalls fspos))
 	(define (on-rule-scs new-expr new-env new-calls new-spos)
 		(define (on-rplc-eval-fail fcalls fspos)
+			(printf "on-rplc-eval-fail ~v~n" (syntax->datum new-expr))
 			(on-err (format "Unable to evaluate replacement expression ~v~n" new-expr) fcalls fspos))
-		(printf "Replacement expression = ~v (~v)~n" new-expr (syntax-e new-expr))
 		(ruse-eval new-expr new-env new-calls new-spos on-scs on-rplc-eval-fail on-err))
 	(cond
 		((symbol? expr)
@@ -174,10 +176,10 @@
 			 (let* ((sub-eval (lambda (sub)
 													(let/cc
 														return
-														(define (on-eval val expr new-calls new-spos) (return val))
+														(define (on-eval val env new-calls new-spos) (return val))
 														(ruse-eval sub env calls spos on-eval on-rule-fail on-err))))
 							(fm-exp (map sub-eval expr)))
-				 (apply-env-to-expr fm-exp env calls spos on-rule-scs on-fail on-err))))
+				 (apply-env-to-expr fm-exp env calls spos on-rule-scs on-rule-fail on-err))))
 		(else (on-fail calls spos))))
 
 (define (ruse-eval-base expr env calls spos on-scs on-fail on-err)
@@ -212,41 +214,50 @@
 			((string? expr) (on-scs expr env calls spos))
 			(else (on-fail calls spos)))))
 
-; Reading the source file gives us syntax objects, which contain a form decorated with syntax information.
-; To evaluate them, we update the source file location and evaluate the content.
+; Reading the source file gives us syntax objects, which contain a form
+; decorated with syntax information.  To evaluate them, we update the source
+; file location and evaluate the content.
 (define (ruse-eval-syntax expr env calls spos on-scs on-fail on-err)
 	(let ((new-spos
 					`(,(syntax-source expr) (,(syntax-line expr) ,(syntax-column expr)))))
 		(ruse-eval (syntax-e expr) env calls new-spos on-scs on-fail on-err)))
 
 (define (ruse-eval-quasiquote expr env calls spos on-scs on-fail on-err)
-	(define (recurse cur-expr)
+	(define (recurse cur-expr cur-spos)
 		(define (on-unquote-fail fcalls fspos) (on-err (format "Failed to unquote: ~v." expr) calls spos))
-		(cond
-			((and (list? cur-expr) (eqv? 'unquote (car cur-expr)))
-			 (let/cc
-				 return
-				 (define (on-unquote-scs uq-val uq-env uq-calls uq-spos)
-					 (return `(no-splice . ,uq-val)))
-				 (ruse-eval (cadr cur-expr) env calls spos on-unquote-scs on-unquote-fail on-err)))
-			((and (list? cur-expr) (eqv? 'unquote-splicing (car cur-expr)))
-			 (let/cc
-				 return
-				 (define (on-unquote-scs uq-val uq-env uq-calls uq-spos)
-					 (return `(splice . ,uq-val)))
-				 (ruse-eval (cadr cur-expr) env calls spos on-unquote-scs on-unquote-fail on-err)))
-			((list? cur-expr)
-			 (cons
-				 'no-splice
-				 (let add-next ((pos cur-expr))
-					 (if (null? pos)
-						 null
-						 (let ((arg (recurse (car pos))))
-							 (if (eqv? 'splice (car arg))
-								 (append (cdr arg) (add-next (cdr pos)))
-								 (cons (cdr arg) (add-next (cdr pos)))))))))
-			(else (cons 'no-splice cur-expr))))
-	(let ((rslt (cdr (recurse (cadr expr)))))
+		(let ((hdr
+						(cond
+							((not (list? cur-expr)) (void))
+							((syntax? (car cur-expr)) (syntax-e (car cur-expr)))
+							(else (car cur-expr)))))
+			(cond
+				((syntax? cur-expr)
+				 (recurse (syntax-e cur-expr)
+									`(,(syntax-source cur-expr) (,(syntax-line cur-expr) ,(syntax-column cur-expr)))))
+				((eqv? 'unquote hdr)
+				 (let/cc
+					 return
+					 (define (on-unquote-scs uq-val uq-env uq-calls uq-spos)
+						 (return `(no-splice . ,uq-val)))
+					 (ruse-eval (cadr cur-expr) env calls spos on-unquote-scs on-unquote-fail on-err)))
+				((eqv? 'unquote-splicing hdr)
+				 (let/cc
+					 return
+					 (define (on-unquote-scs uq-val uq-env uq-calls uq-spos)
+						 (return `(splice . ,uq-val)))
+					 (ruse-eval (cadr cur-expr) env calls spos on-unquote-scs on-unquote-fail on-err)))
+				((list? cur-expr)
+				 (cons
+					 'no-splice
+					 (let add-next ((pos cur-expr))
+						 (if (null? pos)
+							 null
+							 (let ((arg (recurse (car pos) cur-spos)))
+								 (if (eqv? 'splice (car arg))
+									 (append (cdr arg) (add-next (cdr pos)))
+									 (cons (cdr arg) (add-next (cdr pos)))))))))
+				(else (cons 'no-splice cur-expr)))))
+	(let ((rslt (cdr (recurse (cadr expr) spos))))
 		(on-scs rslt env calls spos)))
 
 ; Evaluate using Scheme.
