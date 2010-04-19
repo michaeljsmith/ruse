@@ -462,7 +462,7 @@
 	(define (compile-body bd)
 		(let recurse ((fm bd))
 			(cond
-				((syntax? fm) (recurse (syntax-e fm)))
+				((syntax? fm) fm)
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
@@ -490,7 +490,7 @@
 	(define (compile-body bd)
 		(let recurse ((fm bd))
 			(cond
-				((syntax? fm) (recurse (syntax-e fm)))
+				((syntax? fm) fm)
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
