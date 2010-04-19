@@ -59,6 +59,35 @@
 (ruse-global-rule '(int  @x) '(tag int x))
 (ruse-global-rule '(multiply-int @x @y) '(int (builtin * x y)))
 
+; Source file definitions.
+(define (source? x) (and (vector? x) (eqv? (vector-ref x 0) '*source)))
+(define (source-form src) (vector-ref src 1))
+(define (source-file src) (vector-ref src 2))
+(define (source-line src) (vector-ref src 3))
+(define (source-column src) (vector-ref src 4))
+(define (source fm fl ln col) (vector '*source fm fl ln col))
+
+(define (source->datum src)
+	(let recurse ((cur src))
+		(cond
+			((null? cur) cur)
+			((source? cur)
+			 (recurse (source-form cur)))
+			((pair? cur) (cons (recurse (car cur)) (recurse (cdr cur))))
+			((or (string? cur) (integer? cur) (symbol? cur)) cur)
+			(else (car car)))))
+	
+(define (syntax->source stx)
+	(when (source? stx) (car car))
+	(let recurse ((cur stx))
+		(cond
+			((null? cur) cur)
+			((syntax? cur)
+			 (source (recurse (syntax-e cur)) (syntax-source cur) (syntax-line cur) (syntax-column cur)))
+			((pair? cur) (cons (recurse (car cur)) (recurse (cdr cur))))
+			((or (string? cur) (integer? cur) (symbol? cur)) cur)
+			(else (car car)))))
+
 ; Main evaluate function.
 (define (ruse-eval expr env calls spos on-scs on-fail on-err)
 
@@ -67,20 +96,20 @@
 		(let ((hdr
 						(cond
 							((not (list? expr)) (void))
-							((syntax? (car expr)) (syntax-e (car expr)))
+							((source? (car expr)) (source-form (car expr)))
 							(else (car expr)))))
-			(check-syntax hdr expr env calls spos on-scs on-fail)))
+			(check-source hdr expr env calls spos on-scs on-fail)))
 
-	(define (check-syntax hdr expr env calls spos on-scs on-fail)
-		(if (syntax? expr)
-			(ruse-eval-syntax expr env calls spos on-scs on-fail on-err)
+	(define (check-source hdr expr env calls spos on-scs on-fail)
+		(if (source? expr)
+			(ruse-eval-source expr env calls spos on-scs on-fail on-err)
 			(check-quote hdr expr env calls spos on-scs on-fail)))
 
 	; Check whether expression is quoted, if so return the value.
 	(define (check-quote hdr expr env calls spos on-scs on-fail)
 		(if (eqv? hdr 'quote)
 			(let* ((quote-stx (cadr expr))
-						 (val (if (syntax? quote-stx) (syntax->datum quote-stx) quote-stx)))
+						 (val (if (source? quote-stx) (source->datum quote-stx) quote-stx)))
 				(on-scs val env calls spos))
 			(check-quasiquote hdr expr env calls spos on-scs on-fail)))
 
@@ -152,7 +181,7 @@
 	(define (on-mac-scs val mac-env mac-calls mac-spos)
 		(ruse-eval val env mac-calls mac-spos on-scs on-fail on-err))
 	(define (extract-arg-content arg)
-		(if (syntax? arg) (syntax-e arg) arg))
+		(if (source? arg) (source-form arg) arg))
 	(let ((fm-content
 					(if (list? expr)
 						(map extract-arg-content expr)
@@ -165,7 +194,6 @@
 		(on-fail fcalls fspos))
 	(define (on-rule-scs new-expr new-env new-calls new-spos)
 		(define (on-rplc-eval-fail fcalls fspos)
-			(printf "on-rplc-eval-fail ~v~n" (syntax->datum new-expr))
 			(on-err (format "Unable to evaluate replacement expression ~v~n" new-expr) fcalls fspos))
 		(ruse-eval new-expr new-env new-calls new-spos on-scs on-rplc-eval-fail on-err))
 	(cond
@@ -186,7 +214,7 @@
 	(let ((hdr
 					(cond
 						((not (list? expr)) (void))
-						((syntax? (car expr)) (syntax-e (car expr)))
+						((source? (car expr)) (source-form (car expr)))
 						(else (car expr)))))
 		; Check whether the expression is a rule definition.
 		(cond
@@ -217,10 +245,10 @@
 ; Reading the source file gives us syntax objects, which contain a form
 ; decorated with syntax information.  To evaluate them, we update the source
 ; file location and evaluate the content.
-(define (ruse-eval-syntax expr env calls spos on-scs on-fail on-err)
+(define (ruse-eval-source expr env calls spos on-scs on-fail on-err)
 	(let ((new-spos
-					`(,(syntax-source expr) (,(syntax-line expr) ,(syntax-column expr)))))
-		(ruse-eval (syntax-e expr) env calls new-spos on-scs on-fail on-err)))
+					`(,(source-file expr) (,(source-line expr) ,(source-column expr)))))
+		(ruse-eval (source-form expr) env calls new-spos on-scs on-fail on-err)))
 
 (define (ruse-eval-quasiquote expr env calls spos on-scs on-fail on-err)
 	(define (recurse cur-expr cur-spos)
@@ -228,12 +256,12 @@
 		(let ((hdr
 						(cond
 							((not (list? cur-expr)) (void))
-							((syntax? (car cur-expr)) (syntax-e (car cur-expr)))
+							((source? (car cur-expr)) (source-form (car cur-expr)))
 							(else (car cur-expr)))))
 			(cond
-				((syntax? cur-expr)
-				 (recurse (syntax-e cur-expr)
-									`(,(syntax-source cur-expr) (,(syntax-line cur-expr) ,(syntax-column cur-expr)))))
+				((source? cur-expr)
+				 (recurse (source-form cur-expr)
+									`(,(source-file cur-expr) (,(source-line cur-expr) ,(source-column cur-expr)))))
 				((eqv? 'unquote hdr)
 				 (let/cc
 					 return
@@ -275,7 +303,7 @@
 						(arg-done val))
 					(ruse-eval arg env calls spos on-arg-scs on-arg-fail on-err))))
 		(let* ((val-fm (map eval-arg (cdr fm)))
-					 (bi-expr (cons (car fm) val-fm)))
+					 (bi-expr (cons (source->datum (car fm)) val-fm)))
 			(let ((bi-rslt (eval bi-expr eval-ns)))
 				(on-scs bi-rslt env calls spos)))))
 
@@ -295,8 +323,7 @@
 	(let ((fm (cadr expr))
 				(scope-env (cons (make-scope-bdng (make-scope)) env)))
 		(define (on-scope-fail fcalls fspos)
-			(on-err (format "Failed to eval scope argument: ~v."
-											(if (syntax? fm) (syntax->datum fm) fm))
+			(on-err (format "Failed to eval scope argument: ~v." (source->datum fm))
 							calls spos))
 		(ruse-eval fm scope-env calls spos on-scs on-scope-fail on-err)))
 
@@ -390,8 +417,8 @@
 											 (cond
 												 ((null? sub-ptn)
 													sub-ptn)
-												 ((syntax? sub-ptn)
-													(recurse-pattern (syntax-e sub-ptn)))
+												 ((source? sub-ptn)
+													(recurse-pattern (source-form sub-ptn)))
 												 ((pair? sub-ptn)
 													(cons (recurse-pattern (car sub-ptn)) (recurse-pattern (cdr sub-ptn))))
 												 ((symbol? sub-ptn)
@@ -479,7 +506,7 @@
 	(define (compile-pattern ptn)
 		(let recurse ((fm ptn))
 			(cond
-				((syntax? fm) (recurse (syntax-e fm)))
+				((source? fm) (recurse (source-form fm)))
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
@@ -490,7 +517,7 @@
 	(define (compile-body bd)
 		(let recurse ((fm bd))
 			(cond
-				((syntax? fm) fm)
+				((source? fm) fm)
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
@@ -507,7 +534,7 @@
 	(define (compile-pattern ptn)
 		(let recurse ((fm ptn))
 			(cond
-				((syntax? fm) (recurse (syntax-e fm)))
+				((source? fm) (recurse (source-form fm)))
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
@@ -518,7 +545,7 @@
 	(define (compile-body bd)
 		(let recurse ((fm bd))
 			(cond
-				((syntax? fm) fm)
+				((source? fm) fm)
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
@@ -570,7 +597,7 @@
 		(define (load-from-port p)
 			(port-count-lines! p)
 			(let read-next-data ()
-				(let ((stx null))
+				(let ((src null))
 					(let/cc
 						skip-current-data
 						(define (on-eval-scs val new-env calls spos)
@@ -580,21 +607,23 @@
 						(define (on-eval-fail fcalls fspos)
 							(set! rslt (void))
 							(set! errors (+ 1 errors))
-							(printf "Unable to evaluate form: ~v~n" (syntax->datum stx))
+							(printf "Unable to evaluate form: ~v~n" (source->datum src))
 							(skip-current-data))
 						(define (on-eval-err msg calls spos)
 							(set! rslt (void))
 							(set! errors (+ 1 errors))
-							(printf "Error while evaluating form: ~v~n  Message: ~a~n~n" (syntax->datum stx) msg)
+							(printf "Error while evaluating form: ~v~n  Message: ~a~n~n" (source->datum src) msg)
 							(ruse-print-call-stack calls)
 							(printf "~n")
 							(skip-current-data))
-						(set! stx (read-syntax f p))
-						(unless (eof-object? stx)
-							(begin
-								(ruse-eval stx file-env null '("FILENAME" (1 1)) on-eval-scs on-eval-fail on-eval-err)
-								(printf "Shouldn't get here (2).~n"))))
-					(unless (eof-object? stx)
+						(let ((stx (read-syntax f p)))
+							(set! src stx)
+							(unless (eof-object? stx)
+								(set! src (syntax->source stx))
+								(begin
+									(ruse-eval src file-env null '("FILENAME" (1 1)) on-eval-scs on-eval-fail on-eval-err)
+									(printf "Shouldn't get here (2).~n")))))
+					(unless (eof-object? src)
 						(read-next-data))))
 			(if (> errors 0)
 				(on-err (format "File contained errors (~v)." errors))
@@ -662,10 +691,6 @@
 				(printf "No input files specified.~n")))
 		(when should-run
 			(ruse-load-files in-files))))
-
-;(define (car p)
-;	(printf "car ~v~n" p)
-;	(car p))
 
 ; Run program - pass command line to main function.
 (let ((argv (vector->list (current-command-line-arguments))))
