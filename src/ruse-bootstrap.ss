@@ -128,7 +128,7 @@
 								 (spos (caddr rl))
 								 (file (car spos))
 								 (line (caadr spos))
-								 (col (caadr spos))
+								 (col (cadadr spos))
 								 (ptn (car tmpl))
 								 (body (cdr tmpl))
 								 (hdr
@@ -144,7 +144,13 @@
 (define (ruse-expand-macros expr env calls spos on-scs on-fail on-err)
 	(define (on-mac-scs val mac-env mac-calls mac-spos)
 		(ruse-eval val env mac-calls mac-spos on-scs on-fail on-err))
-	(apply-env-macros-to-expr expr env calls spos on-mac-scs on-fail on-err))
+	(define (extract-arg-content arg)
+		(if (syntax? arg) (syntax-e arg) arg))
+	(let ((fm-content
+					(if (list? expr)
+						(map extract-arg-content expr)
+						expr)))
+		(apply-env-macros-to-expr fm-content env calls spos on-mac-scs on-fail on-err)))
 
 ; Apply any rules that match the current expression.
 (define (ruse-expand-rules expr env calls spos on-scs on-fail on-err)
@@ -184,10 +190,12 @@
 		((and (list? expr) (eqv? (car expr) 'cond))
 		 (ruse-eval-cond expr env calls spos on-scs on-fail on-err))
 		; Handle rule definitions.
-		((and (list? expr) (eqv? (car expr) '=))
+		((and (list? expr) (or (eqv? (car expr) '=)
+													 (and (syntax? (car expr)) (eqv? '= (syntax-e (car expr))))))
 		 (ruse-eval-rule-def expr env calls spos on-scs on-fail on-err))
 		; Handle macro definitions.
-		((and (list? expr) (eqv? (car expr) '=*))
+		((and (list? expr) (or (eqv? (car expr) '=)
+													 (and (syntax? (car expr)) (eqv? '=* (syntax-e (car expr))))))
 		 (ruse-eval-macro-def expr env calls spos on-scs on-fail on-err))
 		; Handle integer literals by returning them as is.
 		((integer? expr) (on-scs expr env calls spos))
@@ -325,6 +333,7 @@
 	; Extract the pattern and the body from the rule.
 	(let* ((templ (car rule))
 				 (rl-env (cadr rule))
+				 (rl-spos (caddr rule))
 				 (ptn (car templ))
 				 (body (cdr templ))
 				 (on-match-scs
@@ -332,9 +341,9 @@
 						 (let ((new-env rl-env))
 							 ; Add all the bindings from the match to the environment.
 							 (do-ec (: bdng bdngs)
-											(set! new-env (cons `(rule (,(car bdng) . (quote ,(cdr bdng))) ()) new-env)))
+											(set! new-env (cons `(rule (,(car bdng) . (quote ,(cdr bdng))) () rl-spos) new-env)))
 							 (on-scs body new-env
-											 (cons (make-call-stack-frame 'rule rule bdngs) calls) spos)))))
+											 (cons (make-call-stack-frame 'rule rule bdngs) calls) rl-spos)))))
 		; Using the handlers we have defined, attempt to match the pattern.
 		(match-ptn ptn expr '() on-match-scs on-fail)))
 
@@ -343,6 +352,7 @@
 	; Extract the pattern and the body from the rule.
 	(let* ((templ (car mac))
 				 (mac-env (cadr mac))
+				 (mac-spos (caddr mac))
 				 (ptn (car templ))
 				 (body (cdr templ))
 				 (on-match-scs
@@ -368,7 +378,7 @@
 																	(check-bindings (cdr cur-bdngs)))))))
 												 (else sub-ptn)))))
 							 (on-scs expnsn mac-env
-											 (cons (make-call-stack-frame 'macro mac bdngs) calls) spos)))))
+											 (cons (make-call-stack-frame 'macro mac bdngs) calls) mac-spos)))))
 		; Using the handlers we have defined, attempt to match the pattern.
 		(match-ptn ptn fm '() on-match-scs on-fail)))
 
@@ -441,6 +451,7 @@
 	(define (compile-pattern ptn)
 		(let recurse ((fm ptn))
 			(cond
+				((syntax? fm) (recurse (syntax-e fm)))
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
@@ -451,6 +462,7 @@
 	(define (compile-body bd)
 		(let recurse ((fm bd))
 			(cond
+				((syntax? fm) (recurse (syntax-e fm)))
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
@@ -467,6 +479,7 @@
 	(define (compile-pattern ptn)
 		(let recurse ((fm ptn))
 			(cond
+				((syntax? fm) (recurse (syntax-e fm)))
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
@@ -477,6 +490,7 @@
 	(define (compile-body bd)
 		(let recurse ((fm bd))
 			(cond
+				((syntax? fm) (recurse (syntax-e fm)))
 				; Handle symbols.
 				((symbol? fm) fm)
 				; Handle forms.
