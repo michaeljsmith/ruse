@@ -112,6 +112,7 @@
 
 	; I'm stumped.
 	(define (fail hdr expr env calls spos on-scs on-fail)
+		(printf "fail ~v . ~v~n" (syntax->datum (car expr)) (syntax->datum (cdr expr)))
 		(on-fail calls spos)
 		(printf "Probably shouldn't get here.")
 		(on-err (format "Unknown value type (~v)." expr) calls spos)
@@ -292,9 +293,10 @@
 
 ; Evaluate scope declaration.
 (define (ruse-eval-scope expr env calls spos on-scs on-fail on-err)
-	(define (on-scope-fail fcalls fspos) (on-err (format "Failed to eval scope argument: ~v." expr) calls spos))
 	(let ((fm (cadr expr))
 				(scope-env (cons (make-scope-bdng (make-scope)) env)))
+		(define (on-scope-fail fcalls fspos)
+			(on-err (format "Failed to eval scope argument: ~v." (syntax->datum fm)) calls spos))
 		(ruse-eval fm scope-env calls spos on-scs on-scope-fail on-err)))
 
 ; Evaluate conditional expression.
@@ -360,6 +362,7 @@
 					 (lambda (bdngs)
 						 (let ((new-env rl-env))
 							 ; Add all the bindings from the match to the environment.
+							 (printf "bdngs (~v) = ~v~n" ptn bdngs)
 							 (do-ec (: bdng bdngs)
 											(set! new-env (cons `(rule (,(car bdng) . (quote ,(cdr bdng))) () rl-spos) new-env)))
 							 (on-scs body new-env
@@ -380,6 +383,7 @@
 				 (body (cdr templ))
 				 (on-match-scs
 					 (lambda (bdngs)
+						 (printf "mac (~v) bdngs = ~v~n" ptn bdngs)
 						 ; Perform a typographical replacement of all variables mentioned
 						 ; in the pattern in the body of the macro.
 						 (let ((expnsn 
