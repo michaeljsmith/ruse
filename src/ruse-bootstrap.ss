@@ -40,6 +40,7 @@
 #lang scheme
 
 (require srfi/42)
+(require scheme/string)
 
 ; Declare some helpers for initializing the environment.
 (define (ruse-global-env bdng)
@@ -155,7 +156,44 @@
 
 (define (compact-format-form src-fm)
 	(let ((fm (source->datum src-fm)))
-		(format "~v" fm)))
+		(let*
+			((max-depth
+				 (let recurse ((cur-fm fm))
+					 (cond
+						 ((null? cur-fm) 0)
+						 ((list? cur-fm) (+ 1 (foldl max 0 (map recurse cur-fm))))
+						 ((pair? cur-fm) (max (recurse (car cur-fm)) (recurse (cdr cur-fm))))
+						 (else 0)))))
+			(let try-limit ((limit-depth (max 0)))
+				(if (> limit-depth max-depth)
+					null
+					(let
+						((cur-val
+							 (let recurse ((cur-fm fm) (cur-depth 0))
+								 (cond
+									 ((null? cur-fm) "()")
+									 ((list? cur-fm)
+										(if (>= cur-depth limit-depth)
+											"(..)"
+											(string-append
+												"("
+												(foldl (lambda (a b) (string-join (list b a) " ")) (recurse (car cur-fm) (+ 1 cur-depth))
+															 (map (lambda (x) (recurse x (+ 1 cur-depth))) (cdr cur-fm)))
+												")")))
+									 ((pair? cur-fm)
+										(if (>= cur-depth limit-depth)
+											"(.)"
+											(string-append
+												"("
+												(string-join (list (recurse (car cur-fm) (+ 1 cur-depth))
+																					 (recurse (cdr cur-fm) (+ 1 cur-depth))) " . ")
+												")")))
+									 (else (format "~v" cur-fm))))))
+						(if (or (null? cur-val) (< (string-length cur-val) 77))
+							(let ((next (try-limit (+ 1 limit-depth))))
+								(if (or (null? next) (< (string-length next) (string-length cur-val)))
+									cur-val next))
+							null)))))))
 
 ; Print out a callstack.
 (define (ruse-print-call-stack calls spos)
