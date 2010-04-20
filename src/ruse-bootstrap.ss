@@ -141,6 +141,7 @@
 
 	; I'm stumped.
 	(define (fail hdr expr env calls spos on-scs on-fail)
+		(printf "on-expand-fail(~v,~v) ~v~n" (caadr spos) (cadadr spos) expr)
 		(on-fail calls spos)
 		(printf "Probably shouldn't get here.")
 		(on-err (format "Unknown value type (~v)." expr) calls spos)
@@ -150,21 +151,27 @@
 	(eval expr env calls spos on-scs on-fail))
 
 ; Call stack definitions.
-(define (make-call-stack-frame tp rl bdngs) (list tp rl bdngs))
+(define (make-call-stack-frame tp spos rl bdngs) (list tp spos rl bdngs))
 (define (with-call-stack-frame sf fn) (apply fn sf))
 
 ; Print out a callstack.
-(define (ruse-print-call-stack calls)
-	(let print-stack ((cur-calls calls))
-		(unless (null? cur-calls) 
+(define (ruse-print-call-stack calls spos)
+	(let print-stack ((cur-calls calls)
+										(prev-spos spos))
+		(if (null? cur-calls) 
+			(let ((file (car prev-spos))
+						(line (caadr prev-spos))
+						(col (cadadr prev-spos)))
+				(printf "<top level>~n")
+				(printf "    ~a(~a,~a):~n" file line col))
 			(with-call-stack-frame
 				(car cur-calls)
-				(lambda (tp rl bdngs)
+				(lambda (tp spos rl bdngs)
 					(let* ((tmpl (car rl))
-								 (spos (caddr rl))
-								 (file (car spos))
-								 (line (caadr spos))
-								 (col (cadadr spos))
+								 (rl-spos (caddr rl))
+								 (file (car prev-spos))
+								 (line (caadr prev-spos))
+								 (col (cadadr prev-spos))
 								 (ptn (car tmpl))
 								 (body (cdr tmpl))
 								 (hdr
@@ -172,9 +179,9 @@
 										((eqv? 'rule tp) 'rule)
 										((eqv? 'macro tp) 'macro)
 										(else (string->symbol (format "UNKNOWN FRAME TYPE(~a)" tp))))))
-						(printf "~a(~a,~a):~n" file line col)
-						(printf "        ~a (~a)\n" ptn hdr))))
-			(print-stack (cdr cur-calls)))))
+						(printf "In ~a ~a\n" hdr ptn)
+						(printf "    ~a(~a,~a):~n" file line col))
+					(print-stack (cdr cur-calls) spos))))))
 
 ; Try to expand any macros before continuing.
 (define (ruse-expand-macros expr env calls spos on-scs on-fail on-err)
@@ -318,7 +325,7 @@
 				(scope-env (cons (make-scope-bdng (make-scope)) env)))
 		(define (on-scope-fail fcalls fspos)
 			(on-err (format "Failed to eval scope argument: ~v." (source->datum fm))
-							calls spos))
+							fcalls fspos))
 		(ruse-eval fm scope-env calls spos on-scs on-scope-fail on-err)))
 
 ; Evaluate conditional expression.
@@ -388,7 +395,7 @@
 							 (do-ec (: bdng bdngs)
 											(set! new-env (cons `(rule (,(car bdng) . (quote ,(cdr bdng))) () rl-spos) new-env)))
 							 (on-scs body new-env
-											 (cons (make-call-stack-frame 'rule rule bdngs) calls) rl-spos))))
+											 (cons (make-call-stack-frame 'rule spos rule bdngs) calls) rl-spos))))
 				 (on-match-fail
 					 (lambda ()
 						 (on-fail calls spos))))
@@ -434,7 +441,7 @@
 																	(check-bindings (cdr cur-bdngs)))))))
 												 (else sub-ptn)))))
 							 (on-scs expnsn mac-env
-											 (cons (make-call-stack-frame 'macro mac bdngs) calls) mac-spos)))))
+											 (cons (make-call-stack-frame 'macro spos mac bdngs) calls) mac-spos)))))
 		; Using the handlers we have defined, attempt to match the pattern.
 		(match-ptn ptn fm '() on-match-scs on-fail)))
 
@@ -614,8 +621,9 @@
 							(set! rslt (void))
 							(set! errors (+ 1 errors))
 							(printf "Error while evaluating form: ~v~n  Message: ~a~n~n" (source->datum src) msg)
-							(ruse-print-call-stack calls)
+							(ruse-print-call-stack calls spos)
 							(printf "~n")
+							(car car)
 							(skip-current-data))
 						(let ((stx (read-syntax f p)))
 							(set! src stx)
