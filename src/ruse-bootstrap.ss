@@ -45,9 +45,9 @@
 (define (ruse-global-env bdng)
 	(set! global-env (cons bdng global-env)))
 (define (ruse-global-rule ptn bd)
-	(ruse-global-env `(rule (,ptn . ,bd) ,global-env (<builtin> 1 1))))
+	(ruse-global-env `(rule (,ptn . ,bd) ,global-env (<builtin> 1 1) ())))
 (define (ruse-global-macro ptn bd)
-	(ruse-global-env `(macro (,ptn . ,bd) ,global-env (<builtin> 1 1))))
+	(ruse-global-env `(macro (,ptn . ,bd) ,global-env (<builtin> 1 1) ())))
 
 ; Initialize the environment.
 (define global-env '())
@@ -89,70 +89,73 @@
 			(else (car car)))))
 
 ; Main evaluate function.
-(define (ruse-eval expr env calls spos on-scs on-fail on-err)
+(define (ruse-eval expr env calls spos on-scs on-err)
 
 	; Primary evaluation function.
-	(define (eval expr env calls spos on-scs on-fail)
+	(define (eval expr env calls spos on-scs)
 		(let ((hdr
 						(cond
 							((not (list? expr)) (void))
 							((source? (car expr)) (source-form (car expr)))
 							(else (car expr)))))
-			(check-source hdr expr env calls spos on-scs on-fail)))
+			(check-source hdr expr env calls spos on-scs)))
 
-	(define (check-source hdr expr env calls spos on-scs on-fail)
+	(define (check-source hdr expr env calls spos on-scs)
 		(if (source? expr)
-			(ruse-eval-source expr env calls spos on-scs on-fail on-err)
-			(check-quote hdr expr env calls spos on-scs on-fail)))
+			(ruse-eval-source expr env calls spos on-scs on-err)
+			(check-quote hdr expr env calls spos on-scs)))
 
 	; Check whether expression is quoted, if so return the value.
-	(define (check-quote hdr expr env calls spos on-scs on-fail)
+	(define (check-quote hdr expr env calls spos on-scs)
 		(if (eqv? hdr 'quote)
 			(let* ((quote-stx (cadr expr))
 						 (val (if (source? quote-stx) (source->datum quote-stx) quote-stx)))
 				(on-scs val env calls spos))
-			(check-quasiquote hdr expr env calls spos on-scs on-fail)))
+			(check-quasiquote hdr expr env calls spos on-scs)))
 
 	; Check whether the expression is quasiquoted.
-	(define (check-quasiquote hdr expr env calls spos on-scs on-fail)
+	(define (check-quasiquote hdr expr env calls spos on-scs)
 		(define (on-qq-fail fcalls fspos)
-			(expand-macros hdr expr env calls spos on-scs on-fail))
+			(expand-macros hdr expr env calls spos on-scs))
 		(if (eqv? hdr 'quasiquote)
 			(ruse-eval-quasiquote expr env calls spos on-scs on-qq-fail on-err)
-			(expand-macros hdr expr env calls spos on-scs on-fail)))
+			(expand-macros hdr expr env calls spos on-scs)))
 
 	; Try to expand any macros before continuing.
-	(define (expand-macros hdr expr env calls spos on-scs on-fail)
+	(define (expand-macros hdr expr env calls spos on-scs)
 		(define (on-mac-fail fcalls fspos)
-			(eval-base hdr expr env calls spos on-scs on-fail))
+			(eval-base hdr expr env calls spos on-scs))
 		(ruse-expand-macros expr env calls spos on-scs on-mac-fail on-err))
 
 	; Evaluate any core functions (eg builtin functions).
-	(define (eval-base hdr expr env calls spos on-scs on-fail)
+	(define (eval-base hdr expr env calls spos on-scs)
 		(define (on-base-fail fcalls fspos)
-			(expand-rules hdr expr env calls spos on-scs on-fail))
+			(expand-rules hdr expr env calls spos on-scs))
 		(ruse-eval-base expr env calls spos on-scs on-base-fail on-err))
 
 	; Apply any rules that match the current expression.
-	(define (expand-rules hdr expr env calls spos on-scs on-fail)
+	(define (expand-rules hdr expr env calls spos on-scs)
 		(define (on-expand-fail fcalls fspos)
-			(fail hdr expr env calls spos on-scs on-fail))
+			(fail hdr expr env calls spos on-scs))
 		(ruse-expand-rules expr env calls spos on-scs on-expand-fail on-err))
 
 	; I'm stumped.
-	(define (fail hdr expr env calls spos on-scs on-fail)
-		(printf "on-expand-fail(~v,~v) ~v~n" (caadr spos) (cadadr spos) expr)
-		(on-fail calls spos)
+	(define (fail hdr expr env calls spos on-scs)
+		(on-err (format "Unable to evaluate expression: ~v." expr) calls spos)
 		(printf "Probably shouldn't get here.")
 		(on-err (format "Unknown value type (~v)." expr) calls spos)
 		(printf "Shouldn't get here (1).~n"))
 
 	; Apply the function pipeline we have defined.
-	(eval expr env calls spos on-scs on-fail))
+	(eval expr env calls spos on-scs))
 
 ; Call stack definitions.
 (define (make-call-stack-frame tp spos rl bdngs) (list tp spos rl bdngs))
 (define (with-call-stack-frame sf fn) (apply fn sf))
+
+(define (compact-format-form src-fm)
+	(let ((fm (source->datum src-fm)))
+		(format "~v" fm)))
 
 ; Print out a callstack.
 (define (ruse-print-call-stack calls spos)
@@ -161,9 +164,10 @@
 		(if (null? cur-calls) 
 			(let ((file (car prev-spos))
 						(line (caadr prev-spos))
-						(col (cadadr prev-spos)))
-				(printf "<top level>~n")
-				(printf "    ~a(~a,~a):~n" file line col))
+						(col (cadadr prev-spos))
+						(form (caddr prev-spos)))
+				(printf "<top level>:~n")
+				(printf "    ~a(~a,~a): ~a~n" file line col (compact-format-form form)))
 			(with-call-stack-frame
 				(car cur-calls)
 				(lambda (tp spos rl bdngs)
@@ -172,6 +176,7 @@
 								 (file (car prev-spos))
 								 (line (caadr prev-spos))
 								 (col (cadadr prev-spos))
+								 (form (caddr prev-spos))
 								 (ptn (car tmpl))
 								 (body (cdr tmpl))
 								 (hdr
@@ -179,14 +184,14 @@
 										((eqv? 'rule tp) 'rule)
 										((eqv? 'macro tp) 'macro)
 										(else (string->symbol (format "UNKNOWN FRAME TYPE(~a)" tp))))))
-						(printf "In ~a ~a\n" hdr ptn)
-						(printf "    ~a(~a,~a):~n" file line col))
+						(printf "In ~a ~a:\n" hdr ptn)
+						(printf "    ~a(~a,~a): ~a~n" file line col (compact-format-form form)))
 					(print-stack (cdr cur-calls) spos))))))
 
 ; Try to expand any macros before continuing.
 (define (ruse-expand-macros expr env calls spos on-scs on-fail on-err)
 	(define (on-mac-scs val mac-env mac-calls mac-spos)
-		(ruse-eval val env mac-calls mac-spos on-scs on-fail on-err))
+		(ruse-eval val env mac-calls mac-spos on-scs on-err))
 	(apply-env-macros-to-expr expr env calls spos on-mac-scs on-fail on-err))
 
 ; Apply any rules that match the current expression.
@@ -194,9 +199,7 @@
 	(define (on-rule-fail fcalls fspos)
 		(on-fail fcalls fspos))
 	(define (on-rule-scs new-expr new-env new-calls new-spos)
-		(define (on-rplc-eval-fail fcalls fspos)
-			(on-err (format "Unable to evaluate replacement expression ~v~n" new-expr) fcalls fspos))
-		(ruse-eval new-expr new-env new-calls new-spos on-scs on-rplc-eval-fail on-err))
+		(ruse-eval new-expr new-env new-calls new-spos on-scs on-err))
 	(cond
 		((symbol? expr)
 		 (apply-env-to-expr expr env calls spos on-rule-scs on-rule-fail on-err))
@@ -206,7 +209,7 @@
 													(let/cc
 														return
 														(define (on-eval val env new-calls new-spos) (return val))
-														(ruse-eval sub env calls spos on-eval on-rule-fail on-err))))
+														(ruse-eval sub env calls spos on-eval on-err))))
 							(fm-exp (map sub-eval expr)))
 				 (apply-env-to-expr fm-exp env calls spos on-rule-scs on-rule-fail on-err))))
 		(else (on-fail calls spos))))
@@ -246,14 +249,13 @@
 ; Reading the source file gives us syntax objects, which contain a form
 ; decorated with syntax information.  To evaluate them, we update the source
 ; file location and evaluate the content.
-(define (ruse-eval-source expr env calls spos on-scs on-fail on-err)
+(define (ruse-eval-source expr env calls spos on-scs on-err)
 	(let ((new-spos
-					`(,(source-file expr) (,(source-line expr) ,(source-column expr)))))
-		(ruse-eval (source-form expr) env calls new-spos on-scs on-fail on-err)))
+					`(,(source-file expr) (,(source-line expr) ,(source-column expr)) ,(source-form expr))))
+		(ruse-eval (source-form expr) env calls new-spos on-scs on-err)))
 
 (define (ruse-eval-quasiquote expr env calls spos on-scs on-fail on-err)
 	(define (recurse cur-expr cur-spos)
-		(define (on-unquote-fail fcalls fspos) (on-err (format "Failed to unquote: ~v." expr) calls spos))
 		(let ((hdr
 						(cond
 							((not (list? cur-expr)) (void))
@@ -268,13 +270,13 @@
 					 return
 					 (define (on-unquote-scs uq-val uq-env uq-calls uq-spos)
 						 (return `(no-splice . ,uq-val)))
-					 (ruse-eval (cadr cur-expr) env calls spos on-unquote-scs on-unquote-fail on-err)))
+					 (ruse-eval (cadr cur-expr) env calls spos on-unquote-scs on-err)))
 				((eqv? 'unquote-splicing hdr)
 				 (let/cc
 					 return
 					 (define (on-unquote-scs uq-val uq-env uq-calls uq-spos)
 						 (return `(splice . ,uq-val)))
-					 (ruse-eval (cadr cur-expr) env calls spos on-unquote-scs on-unquote-fail on-err)))
+					 (ruse-eval (cadr cur-expr) env calls spos on-unquote-scs on-err)))
 				((list? cur-expr)
 				 (cons
 					 'no-splice
@@ -299,10 +301,9 @@
 				'quote
 				(let/cc
 					arg-done
-					(define (on-arg-fail fcalls fspos) (on-err (format "Builtin eval failed to evaluate argument ~v." arg) calls spos))
 					(define (on-arg-scs val new-env new-calls new-spos)
 						(arg-done val))
-					(ruse-eval arg env calls spos on-arg-scs on-arg-fail on-err))))
+					(ruse-eval arg env calls spos on-arg-scs on-err))))
 		(let* ((val-fm (map eval-arg (cdr fm)))
 					 (bi-expr (cons (source->datum (car fm)) val-fm)))
 			(let ((bi-rslt (eval bi-expr eval-ns)))
@@ -311,22 +312,17 @@
 ; Evaluate dynamic form.
 (define (ruse-eval-eval expr env calls spos on-scs on-fail on-err)
 	(define (on-eval-arg-scs dyn-val dyn-env dyn-calls dyn-spos)
-		(define (on-eval-fail fcalls fspos) (on-err (format "Failed to eval dynamic form: ~v." dyn-val) dyn-calls dyn-spos))
 		(ruse-eval dyn-val dyn-env calls spos
 							 (lambda (nval nenv)
-								 (on-scs nval nenv calls spos)) on-eval-fail on-err))
-	(define (on-eval-arg-fail fcalls fspos) (on-err (format "Failed to eval dynamic form argument: ~v" expr) calls spos))
+								 (on-scs nval nenv calls spos)) on-err))
 	(let ((fm (cadr expr)))
-		(ruse-eval fm env calls spos on-eval-arg-scs on-eval-arg-fail on-err)))
+		(ruse-eval fm env calls spos on-eval-arg-scs on-err)))
 
 ; Evaluate scope declaration.
 (define (ruse-eval-scope expr env calls spos on-scs on-fail on-err)
 	(let ((fm (cadr expr))
 				(scope-env (cons (make-scope-bdng (make-scope)) env)))
-		(define (on-scope-fail fcalls fspos)
-			(on-err (format "Failed to eval scope argument: ~v." (source->datum fm))
-							fcalls fspos))
-		(ruse-eval fm scope-env calls spos on-scs on-scope-fail on-err)))
+		(ruse-eval fm scope-env calls spos on-scs on-err)))
 
 ; Evaluate conditional expression.
 (define (ruse-eval-cond expr env calls spos on-scs on-fail on-err)
@@ -339,16 +335,14 @@
 						 (rslt (cadr cnd-pair)))
 				(let/cc
 					exit
-					(define (on-rslt-fail fcalls fspos) (on-err (format "Failed to eval cond result: ~v." rslt) calls spos))
 					(define (on-cond-scs cnd-val cond-env cond-calls cond-spos)
 						(if cnd-val
-							(ruse-eval rslt env calls spos on-scs on-rslt-fail on-err)
+							(ruse-eval rslt env calls spos on-scs on-err)
 							(eval-cond (cdr cnd-pairs)))
 						(exit))
-					(define (on-cond-fail fcalls fspos) (on-err (format "Failed to eval cond test: ~v." cnd) calls spos))
 					(if (eq? cnd 'else)
-						(ruse-eval rslt env calls spos on-scs on-rslt-fail on-err)
-						(ruse-eval cnd env calls spos on-cond-scs on-cond-fail on-err)))))))
+						(ruse-eval rslt env calls spos on-scs on-err)
+						(ruse-eval cnd env calls spos on-cond-scs on-err)))))))
 
 ; Pattern matching.
 (define (effective-val val) (if (source? val) (source-form val) val))
@@ -612,25 +606,19 @@
 							(set! rslt val)
 							(set! file-env new-env)
 							(skip-current-data))
-						(define (on-eval-fail fcalls fspos)
-							(set! rslt (void))
-							(set! errors (+ 1 errors))
-							(printf "Unable to evaluate form: ~v~n" (source->datum src))
-							(skip-current-data))
 						(define (on-eval-err msg calls spos)
 							(set! rslt (void))
 							(set! errors (+ 1 errors))
 							(printf "Error while evaluating form: ~v~n  Message: ~a~n~n" (source->datum src) msg)
 							(ruse-print-call-stack calls spos)
 							(printf "~n")
-							(car car)
 							(skip-current-data))
 						(let ((stx (read-syntax f p)))
 							(set! src stx)
 							(unless (eof-object? stx)
 								(set! src (syntax->source stx))
 								(begin
-									(ruse-eval src file-env null '("FILENAME" (1 1)) on-eval-scs on-eval-fail on-eval-err)
+									(ruse-eval src file-env null '("FILENAME" (1 1)) on-eval-scs on-eval-err)
 									(printf "Shouldn't get here (2).~n")))))
 					(unless (eof-object? src)
 						(read-next-data))))
