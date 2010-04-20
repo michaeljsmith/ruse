@@ -223,6 +223,10 @@
 										((eqv? 'macro tp) 'macro)
 										(else (string->symbol (format "UNKNOWN FRAME TYPE(~a)" tp))))))
 						(printf "In ~a ~a:\n" hdr ptn)
+						(for-each
+							(lambda (bdng)
+								(printf "    ~v = ~v~n" (car bdng) (compact-format-form (cdr bdng))))
+							bdngs)
 						(printf "    ~a(~a,~a): ~a~n" file line col (compact-format-form form)))
 					(print-stack (cdr cur-calls) spos))))))
 
