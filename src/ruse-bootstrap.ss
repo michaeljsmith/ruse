@@ -61,11 +61,11 @@
 
 ; Source file definitions.
 (define (source? x) (and (vector? x) (eqv? (vector-ref x 0) '*source)))
-(define (source-form src) (vector-ref src 1))
-(define (source-file src) (vector-ref src 2))
-(define (source-line src) (vector-ref src 3))
-(define (source-column src) (vector-ref src 4))
-(define (source fm fl ln col) (vector '*source fm fl ln col))
+(define (source-form src) (vector-ref src 4))
+(define (source-file src) (vector-ref src 1))
+(define (source-line src) (vector-ref src 2))
+(define (source-column src) (vector-ref src 3))
+(define (source fm fl ln col) (vector '*source fl ln col fm))
 
 (define (source->datum src)
 	(let recurse ((cur src))
@@ -180,13 +180,7 @@
 (define (ruse-expand-macros expr env calls spos on-scs on-fail on-err)
 	(define (on-mac-scs val mac-env mac-calls mac-spos)
 		(ruse-eval val env mac-calls mac-spos on-scs on-fail on-err))
-	(define (extract-arg-content arg)
-		(if (source? arg) (source-form arg) arg))
-	(let ((fm-content
-					(if (list? expr)
-						(map extract-arg-content expr)
-						expr)))
-		(apply-env-macros-to-expr fm-content env calls spos on-mac-scs on-fail on-err)))
+	(apply-env-macros-to-expr expr env calls spos on-mac-scs on-fail on-err))
 
 ; Apply any rules that match the current expression.
 (define (ruse-expand-rules expr env calls spos on-scs on-fail on-err)
@@ -350,22 +344,23 @@
 						(ruse-eval cnd env calls spos on-cond-scs on-cond-fail on-err)))))))
 
 ; Pattern matching.
+(define (effective-val val) (if (source? val) (source-form val) val))
 (define (ptn-is-var? ptn)
 	(eqv? #\@ (string-ref (symbol->string ptn) 0)))
 (define (ptn->var-name ptn)
 	(string->symbol (substring (symbol->string ptn) 1)))
 (define (match-sym ptn val bdngs on-scs on-fail)
-	(if (eqv? ptn val)
+	(if (eqv? ptn (effective-val val))
 		(on-scs bdngs)
 		(on-fail)))
 (define (match-var ptn val bdngs on-scs on-fail)
 	(on-scs (cons (cons (ptn->var-name ptn) val) bdngs)))
 (define (match-pair ptn val bdngs on-scs on-fail)
-	(if (pair? val)
+	(if (pair? (effective-val val))
 		(let ((sub-on-scs
 						(lambda (new-bdngs)
-							(match-ptn (cdr ptn) (cdr val) new-bdngs on-scs on-fail))))
-			(match-ptn (car ptn) (car val) bdngs sub-on-scs on-fail))
+							(match-ptn (cdr ptn) (cdr (effective-val val)) new-bdngs on-scs on-fail))))
+			(match-ptn (car ptn) (car (effective-val val)) bdngs sub-on-scs on-fail))
 		(on-fail)))
 (define (match-ptn ptn val bdngs on-scs on-fail)
 	(cond
@@ -374,7 +369,7 @@
 		((symbol? ptn)
 		 (match-sym ptn val bdngs on-scs on-fail))
 		((pair? ptn) (match-pair ptn val bdngs on-scs on-fail))
-		((and (null? ptn) (null? val)) (on-scs bdngs))
+		((and (null? ptn) (null? (effective-val val))) (on-scs bdngs))
 		(else (on-fail))))
 
 ; Function taking a form (whose arguments have already been evaluated) and
