@@ -53,12 +53,6 @@
 ; Initialize the environment.
 (define global-env '())
 (ruse-global-rule 'null (quote '()))
-(ruse-global-rule 'tag '(quote tag))
-(ruse-global-rule '(tag @t1 @v) '(builtin list t1 v))
-(ruse-global-rule 'multiply-int '(quote multiply-int))
-(ruse-global-rule 'int '(quote int))
-(ruse-global-rule '(int  @x) '(tag int x))
-(ruse-global-rule '(multiply-int @x @y) '(int (builtin * x y)))
 
 ; Source file definitions.
 (define (source? x) (and (vector? x) (eqv? (vector-ref x 0) '*source)))
@@ -142,7 +136,7 @@
 
 	; I'm stumped.
 	(define (fail hdr expr env calls spos on-scs)
-		(on-err (format "Unable to evaluate expression: ~v." expr) calls spos)
+		(on-err (format "Unable to evaluate expression: ~v." (source->datum expr)) calls spos)
 		(printf "Probably shouldn't get here.")
 		(on-err (format "Unknown value type (~v)." expr) calls spos)
 		(printf "Shouldn't get here (1).~n"))
@@ -225,7 +219,7 @@
 						(printf "In ~a ~a:\n" hdr ptn)
 						(for-each
 							(lambda (bdng)
-								(printf "    ~v = ~v~n" (car bdng) (compact-format-form (cdr bdng))))
+								(printf "    ~a = ~a~n" (car bdng) (compact-format-form (cdr bdng))))
 							bdngs)
 						(printf "    ~a(~a,~a): ~a~n" file line col (compact-format-form form)))
 					(print-stack (cdr cur-calls) spos))))))

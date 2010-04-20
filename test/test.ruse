@@ -35,6 +35,15 @@
 
 ;----------------------------------------------------------------------------
 ; Integers.
+(= int 'int)
+
+;----------------------------------------------------------------------------
+; Generic access.
+(= get 'get)
+(= set 'set)
+
+;----------------------------------------------------------------------------
+; Integers.
 (= (+ (int @a) (int @b))
 	 (add-int a b))
 
@@ -42,14 +51,18 @@
 	 (subtract-int a b))
 
 ;----------------------------------------------------------------------------
+; Buffers.
+(= buffer 'buffer)
+
+;----------------------------------------------------------------------------
 ; Buffer ref.
 (= buffer-pos-ref 'buffer-pos-ref)
-(= (buffer-pos-ref (buf @buf) (int @pos))
-	 (tag buffer-pos-ref (list (tag buf buf) (tag int pos))))
+(= (buffer-pos-ref (buffer @buf) (int @pos))
+	 (list buffer-pos-ref (list (list buffer buf) (list int pos))))
 (= (+ (buffer-pos-ref (@buf @pos)) ofs)
-	 (tag buffer-pos-ref (list buf (+ pos ofs))))
+	 (list buffer-pos-ref (list buf (+ pos ofs))))
 (= (- (buffer-pos-ref (@buf @pos)) ofs)
-	 (tag buffer-pos-ref (list buf (- pos ofs))))
+	 (list buffer-pos-ref (list buf (- pos ofs))))
 
 ;----------------------------------------------------------------------------
 ; Packable types.
@@ -72,13 +85,13 @@
 (= contiguous-packer 'contiguous-packer)
 
 (= (packing-padding-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
-	 (tag buffer-pos-ref (list buf pos)))
+	 (list buffer-pos-ref (list buf pos)))
 (= (packing-field-pop contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
-	 (- (tag buffer-pos-ref (buf pos)) (sizeof type)))
+	 (- (list buffer-pos-ref (buf pos)) (sizeof type)))
 (= (packing-padding-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
-	 (tag buffer-pos-ref (list buf pos)))
+	 (list buffer-pos-ref (list buf pos)))
 (= (packing-field-push contiguous-packer (buffer-pos-ref (@buf @pos)) @type @fields-tail)
-	 (+ (tag buffer-pos-ref (buf pos)) (sizeof type)))
+	 (+ (list buffer-pos-ref (buf pos)) (sizeof type)))
 
 ;----------------------------------------------------------------------------
 ; Record.
@@ -86,18 +99,18 @@
 
 ; General case constructor.
 (= (record @representation @fields)
-	 (tag record (list representation fields)))
+	 (list record (list representation fields)))
 
 (= field-list 'field-list)
 (= (field-list @fields)
-	 (tag field-list fields))
+	 (list field-list fields))
 
 ;----------------------------------------------------------------------------
 ; Buffer record representation.
 
 (= buffer-record-rep 'buffer-record-rep)
 (= (buffer-record-rep @packer)
-	 (tag buffer-record-rep packer))
+	 (list buffer-record-rep packer))
 
 ; Define a simplified record constructor using buffer record representation, since this is the default case.
 (= buf-record 'buf-record)
@@ -153,7 +166,7 @@
 	 ; Calculate the size by creating a dummy reference and packing
 	 ; all the fields into it, then returning the position at the end.
 	 (block
-		 (= dummy-ref (buffer-pos-ref ((buf null) (int 0))))
+		 (= dummy-ref (buffer-pos-ref ((list buffer null) 0)))
 		 (= recurse 'recurse)
 		 (= (recurse ((@name @type) . @fields-remaining))
 				(block
