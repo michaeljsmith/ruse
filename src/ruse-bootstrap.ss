@@ -622,6 +622,19 @@
 				(on-scs 'mac-def env calls spos))
 			(on-fail calls spos))))
 
+; Perform reader expansions.
+(define (ruse-perform-reader-expansions expr)
+	(let recurse ((cur expr))
+		(cond
+			((null? cur) cur)
+			((source? cur)
+			 (source (recurse (source-form cur)) (source-file cur) (source-line cur) (source-column cur)))
+			((pair? cur) (cons (recurse (car cur)) (recurse (cdr cur))))
+			((string? cur) (list 'quote (list 'string cur)))
+			((integer? cur) (list 'quote (list 'integer cur)))
+			((symbol? cur) cur)
+			(else (begin (printf "VAL=~v~n" cur) (car car))))))
+
 ; Execute a given file.
 (define (ruse-load-file f env on-scs on-err)
 	(let ((rslt (void))
@@ -647,7 +660,7 @@
 						(let ((stx (read-syntax f p)))
 							(set! src stx)
 							(unless (eof-object? stx)
-								(set! src (syntax->source stx))
+								(set! src (ruse-perform-reader-expansions (syntax->source stx)))
 								(begin
 									(ruse-eval src file-env null '("FILENAME" (1 1)) on-eval-scs on-eval-err)
 									(printf "Shouldn't get here (2).~n")))))

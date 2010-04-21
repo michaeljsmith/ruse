@@ -35,7 +35,7 @@
 
 ;----------------------------------------------------------------------------
 ; Integers.
-(= int 'int)
+(= integer 'integer)
 
 ;----------------------------------------------------------------------------
 ; Generic access.
@@ -44,10 +44,10 @@
 
 ;----------------------------------------------------------------------------
 ; Integers.
-(= (+ (int @a) (int @b))
+(= (+ (integer @a) (integer @b))
 	 (add-int a b))
 
-(= (- (int @a) (int @b))
+(= (- (integer @a) (integer @b))
 	 (subtract-int a b))
 
 ;----------------------------------------------------------------------------
@@ -57,8 +57,8 @@
 ;----------------------------------------------------------------------------
 ; Buffer ref.
 (= buffer-pos-ref 'buffer-pos-ref)
-(= (buffer-pos-ref (buffer @buf) (int @pos))
-	 (list buffer-pos-ref (list (list buffer buf) (list int pos))))
+(= (buffer-pos-ref (buffer @buf) (integer @pos))
+	 (list buffer-pos-ref (list (list buffer buf) (list integer pos))))
 (= (+ (buffer-pos-ref (@buf @pos)) ofs)
 	 (list buffer-pos-ref (list buf (+ pos ofs))))
 (= (- (buffer-pos-ref (@buf @pos)) ofs)
@@ -166,7 +166,7 @@
 	 ; Calculate the size by creating a dummy reference and packing
 	 ; all the fields into it, then returning the position at the end.
 	 (block
-		 (= dummy-ref (buffer-pos-ref ((list buffer null) 0)))
+		 (= dummy-ref (buffer-pos-ref (list buffer null) 0))
 		 (= recurse 'recurse)
 		 (= (recurse ((@name @type) . @fields-remaining))
 				(block
@@ -213,7 +213,7 @@
 ;(= bar (foo 'a 'b 'c))
 ;bar
 
-(= point (buf-record `(x ,int) `(y ,int) `(z ,int)))
+(= point (buf-record `(x ,integer) `(y ,integer) `(z ,integer)))
 (sizeof point)
 
 ;(get test-record 'test-field)
