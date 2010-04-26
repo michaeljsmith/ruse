@@ -55,17 +55,9 @@
 (ruse-global-rule 'null (quote '()))
 (ruse-global-macro '(eval @fm) '(_eval fm))
 (ruse-global-macro '(scope @fm) '(_scope fm))
-(ruse-global-macro '(cond . @args) '(_cond . args))
+(ruse-global-macro '(cond . @args) '(_cond args))
 (ruse-global-macro '(= . @args) '(_= . args))
 (ruse-global-macro '(=* . @args) '(_=* . args))
-
-;(ruse-global-rule 'null (quote '()))
-;(ruse-global-rule 'tag '(quote tag))
-;(ruse-global-rule '(tag @t1 @v) '(builtin list t1 v))
-;(ruse-global-rule 'multiply-int '(quote multiply-int))
-;(ruse-global-rule 'int '(quote int))
-;(ruse-global-rule '(int  @x) '(tag int x))
-;(ruse-global-rule '(multiply-int @x @y) '(int (builtin * x y)))
 
 ; Source file definitions.
 (define (source? x) (and (vector? x) (eqv? (vector-ref x 0) '*source)))
@@ -370,8 +362,7 @@
 
 ; Evaluate conditional expression.
 (define (ruse-eval-cond expr env calls spos on-scs on-fail on-err)
-	(when (not (list? (cadr expr))) (on-err "cond arguments not list." calls spos))
-	(let eval-cond ((cnd-pairs (cdr expr)))
+	(let eval-cond ((cnd-pairs (cadr expr)))
 		(if (null? cnd-pairs)
 			(on-err "Cond has no cases." calls spos)
 			(let* ((cnd-pair (car cnd-pairs))
