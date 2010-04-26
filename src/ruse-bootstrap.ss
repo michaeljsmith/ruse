@@ -53,7 +53,6 @@
 ; Initialize the environment.
 (define global-env '())
 (ruse-global-rule 'null (quote '()))
-(ruse-global-macro '(eval @fm) '(_eval fm))
 (ruse-global-macro '(scope @fm) '(_scope fm))
 (ruse-global-macro '(cond . @args) '(_cond args))
 (ruse-global-macro '(= . @args) '(_= args))
@@ -267,9 +266,6 @@
 			; Handle requests to evaluate form as a scheme form.
 			((eqv? hdr 'builtin)
 			 (ruse-eval-builtin expr env calls spos on-scs on-fail on-err))
-			; Handle requests to evaluate dynamic form.
-			((eqv? hdr '_eval)
-			 (ruse-eval-eval expr env calls spos on-scs on-fail on-err))
 			; Handle requests to evaluate in a sub-scope.
 			((eqv? hdr '_scope)
 			 (ruse-eval-scope expr env calls spos on-scs on-fail on-err))
@@ -350,15 +346,6 @@
 					 (bi-expr (cons (source->datum (car fm)) val-fm)))
 			(let ((bi-rslt (eval bi-expr eval-ns)))
 				(on-scs bi-rslt env calls spos)))))
-
-; Evaluate dynamic form.
-(define (ruse-eval-eval expr env calls spos on-scs on-fail on-err)
-	(define (on-eval-arg-scs dyn-val dyn-env dyn-calls dyn-spos)
-		(ruse-eval dyn-val dyn-env calls spos
-							 (lambda (nval nenv)
-								 (on-scs nval nenv calls spos)) on-err))
-	(let ((fm (cadr expr)))
-		(ruse-eval fm env calls spos on-eval-arg-scs on-err)))
 
 ; Evaluate scope declaration.
 (define (ruse-eval-scope expr env calls spos on-scs on-fail on-err)
