@@ -53,10 +53,15 @@
 ; Initialize the environment.
 (define global-env '())
 (ruse-global-rule 'null (quote '()))
+(ruse-global-rule '_builtin '(quote  '_builtin))
 (ruse-global-macro '(builtin . @fm) '(_builtin (quote fm)))
+(ruse-global-rule '_scope '(quote _scope))
 (ruse-global-macro '(scope @fm) '(_scope (quote fm)))
+(ruse-global-rule '_cond '(quote _cond))
 (ruse-global-macro '(cond . @args) '(_cond (quote args)))
+(ruse-global-rule '_= '(quote _=))
 (ruse-global-macro '(= . @args) '(_= (quote args)))
+(ruse-global-rule '_=* '(quote _=*))
 (ruse-global-macro '(=* . @args) '(_=* (quote args)))
 
 ; Source file definitions.
@@ -128,20 +133,20 @@
 	; Try to expand any macros before continuing.
 	(define (expand-macros hdr expr env calls spos on-scs)
 		(define (on-mac-fail fcalls fspos)
-			(eval-base hdr expr env calls spos on-scs))
-		(ruse-expand-macros expr env calls spos on-scs on-mac-fail on-err))
-
-	; Evaluate any core functions (eg builtin functions).
-	(define (eval-base hdr expr env calls spos on-scs)
-		(define (on-base-fail fcalls fspos)
 			(expand-rules hdr expr env calls spos on-scs))
-		(ruse-eval-base expr env calls spos on-scs on-base-fail on-err))
+		(ruse-expand-macros expr env calls spos on-scs on-mac-fail on-err))
 
 	; Apply any rules that match the current expression.
 	(define (expand-rules hdr expr env calls spos on-scs)
 		(define (on-rules-fail fcalls fspos)
-			(on-err (format "Unable to evaluate expression: ~v." (source->datum expr)) fcalls fspos))
+			(eval-base hdr expr env fcalls fspos on-scs))
 		(ruse-expand-rules expr env calls spos on-scs on-rules-fail on-err))
+
+	; Evaluate any core functions (eg builtin functions).
+	(define (eval-base hdr expr env calls spos on-scs)
+		(define (on-base-fail fcalls fspos)
+			(on-err (format "Unable to evaluate expression: ~v." (source->datum expr)) fcalls fspos))
+		(ruse-eval-base expr env calls spos on-scs on-base-fail on-err))
 
 	; Apply the function pipeline we have defined.
 	(eval expr env calls spos on-scs))
@@ -361,22 +366,22 @@
 ; Evaluate conditional expression.
 (define (ruse-eval-cond in-expr in-env in-calls in-spos on-scs on-fail on-err)
 	(define (evaluate val env calls spos)
-		(let eval-cond ((cnd-pairs val))
-			(if (null? cnd-pairs)
-				(on-err "Cond has no cases." calls spos)
-				(let* ((cnd-pair (car cnd-pairs))
-							 (cnd (car cnd-pair))
-							 (rslt (cadr cnd-pair)))
-					(let/cc
-						exit
-						(define (on-cond-scs cnd-val cond-env cond-calls cond-spos)
-							(if cnd-val
-								(ruse-eval rslt env calls spos on-scs on-err)
-								(eval-cond (cdr cnd-pairs)))
-							(exit))
-						(if (eq? cnd 'else)
+ 		(let eval-cond ((cnd-pairs val))
+ 			(if (null? cnd-pairs)
+ 				(on-err "Cond has no cases." calls spos)
+ 				(let* ((cnd-pair (car cnd-pairs))
+ 							 (cnd (car cnd-pair))
+ 							 (rslt (cadr cnd-pair)))
+ 					(let/cc
+ 						exit
+ 						(define (on-cond-scs cnd-val cond-env cond-calls cond-spos)
+ 							(if cnd-val
+ 								(ruse-eval rslt env calls spos on-scs on-err)
+ 								(eval-cond (cdr cnd-pairs)))
+ 							(exit))
+ 						(if (eq? cnd 'else)
 							(ruse-eval rslt env calls spos on-scs on-err)
-							(ruse-eval cnd env calls spos on-cond-scs on-err)))))))
+ 						(ruse-eval cnd env calls spos on-cond-scs on-err)))))))
 	(ruse-eval (cadr in-expr) in-env in-calls in-spos evaluate on-err))
 
 ; Pattern matching.
