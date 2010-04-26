@@ -137,10 +137,11 @@
 			(expand-rules hdr expr env calls spos on-scs))
 		(ruse-eval-base expr env calls spos on-scs on-base-fail on-err))
 
-	; Apply any rules that match the current expression. This function will
-	; error if it fails.
+	; Apply any rules that match the current expression.
 	(define (expand-rules hdr expr env calls spos on-scs)
-		(ruse-expand-rules expr env calls spos on-scs on-err))
+		(define (on-rules-fail fcalls fspos)
+			(on-err (format "Unable to evaluate expression: ~v." (source->datum expr)) fcalls fspos))
+		(ruse-expand-rules expr env calls spos on-scs on-rules-fail on-err))
 
 	; Apply the function pipeline we have defined.
 	(eval expr env calls spos on-scs))
@@ -233,14 +234,14 @@
 	(apply-env-macros-to-expr expr env calls spos on-mac-scs on-fail on-err))
 
 ; Apply any rules that match the current expression.
-(define (ruse-expand-rules expr env calls spos on-scs on-err)
+(define (ruse-expand-rules expr env calls spos on-scs on-fail on-err)
 	(define (on-rule-scs new-expr new-env new-calls new-spos)
 		(ruse-eval new-expr new-env new-calls new-spos on-scs on-err))
 	(cond
 		((symbol? expr)
 		 (let ((on-expand-sym-fail
 						 (lambda (fcalls fspos)
-							 (on-err (format "Unable to evaluate expression: ~v" (source->datum expr)) fcalls fspos))))
+							 (on-fail fcalls fspos))))
 			 (apply-env-to-expr expr env calls spos on-rule-scs on-expand-sym-fail on-err)))
 		((list? expr)
 		 (begin
@@ -251,9 +252,9 @@
 														(ruse-eval sub env calls spos on-eval on-err))))
 							(fm-exp (map sub-eval expr)))
 				 (define (on-expand-form-fail fcalls fspos)
-					 (on-err (format "Unable to evaluate expression: ~v" (source->datum fm-exp)) fcalls fspos))
+					 (on-fail fcalls fspos))
 				 (apply-env-to-expr fm-exp env calls spos on-rule-scs on-expand-form-fail on-err))))
-		(else (on-err ("Unable to evaluate expression: ~v")))))
+		(else (on-fail calls spos))))
 
 (define (ruse-eval-base expr env calls spos on-scs on-fail on-err)
 	(let ((hdr
