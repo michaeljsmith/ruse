@@ -56,7 +56,7 @@
 (ruse-global-macro '(scope @fm) '(_scope (quote fm)))
 (ruse-global-macro '(cond . @args) '(_cond (quote args)))
 (ruse-global-macro '(= . @args) '(_= (quote args)))
-(ruse-global-macro '(=* . @args) '(_=* args))
+(ruse-global-macro '(=* . @args) '(_=* (quote args)))
 
 ; Source file definitions.
 (define (source? x) (and (vector? x) (eqv? (vector-ref x 0) '*source)))
@@ -617,13 +617,15 @@
 	(ruse-eval (cadr in-expr) in-env in-calls in-spos evaluate on-err))
 
 ; Evaluate a macro definition (add it to the environment).
-(define (ruse-eval-macro-def expr env calls spos on-scs on-fail on-err)
-	(let ((mac-tpl (compile-macro-def (cadr expr))))
-		(if mac-tpl
-			(let ((mac (list mac-tpl env spos)))
-				(ruse-add-to-current-scope (cons 'macro mac) env calls spos on-err)
-				(on-scs 'mac-def env calls spos))
-			(on-fail calls spos))))
+(define (ruse-eval-macro-def in-expr in-env in-calls in-spos on-scs on-fail on-err)
+	(define (evaluate val env calls spos)
+		(let ((mac-tpl (compile-macro-def val)))
+			(if mac-tpl
+				(let ((mac (list mac-tpl env spos)))
+					(ruse-add-to-current-scope (cons 'macro mac) env calls spos on-err)
+					(on-scs 'mac-def env calls spos))
+				(on-fail calls spos))))
+		(ruse-eval (cadr in-expr) in-env in-calls in-spos evaluate on-err))
 
 ; Perform reader expansions.
 (define (ruse-perform-reader-expansions expr)
