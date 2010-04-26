@@ -67,6 +67,7 @@
 (define (source-column src) (vector-ref src 3))
 (define (source fm fl ln col) (vector '*source fl ln col fm))
 
+; Strip an expression of all source location information.
 (define (source->datum src)
 	(let recurse ((cur src))
 		(cond
@@ -77,6 +78,8 @@
 			((or (string? cur) (integer? cur) (symbol? cur)) cur)
 			(else (car car)))))
 	
+; Convert a PLT scheme syntax object to a value annotated with source location information.
+; It's basically the same thing, but we can mutate this tree when we do macro expansions.
 (define (syntax->source stx)
 	(when (source? stx) (car car))
 	(let recurse ((cur stx))
@@ -100,6 +103,7 @@
 							(else (car expr)))))
 			(check-source hdr expr env calls spos on-scs)))
 
+	; If this is a source location node, we need to update our idea of our current source location.
 	(define (check-source hdr expr env calls spos on-scs)
 		(if (source? expr)
 			(ruse-eval-source expr env calls spos on-scs on-err)
@@ -145,6 +149,7 @@
 (define (make-call-stack-frame tp spos rl bdngs) (list tp spos rl bdngs))
 (define (with-call-stack-frame sf fn) (apply fn sf))
 
+; Create a string representing a form, but use a maximum size. Useful for pretty-printing.
 (define (compact-format-form src-fm)
 	(let ((fm (source->datum src-fm)))
 		(let*
