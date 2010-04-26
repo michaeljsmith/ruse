@@ -54,7 +54,7 @@
 (define global-env '())
 (ruse-global-rule 'null (quote '()))
 (ruse-global-macro '(scope @fm) '(_scope (quote fm)))
-(ruse-global-macro '(cond . @args) '(_cond args))
+(ruse-global-macro '(cond . @args) '(_cond (quote args)))
 (ruse-global-macro '(= . @args) '(_= args))
 (ruse-global-macro '(=* . @args) '(_=* args))
 
@@ -356,23 +356,25 @@
 	(ruse-eval (cadr expr) in-env in-calls in-spos evaluate on-err))
 
 ; Evaluate conditional expression.
-(define (ruse-eval-cond expr env calls spos on-scs on-fail on-err)
-	(let eval-cond ((cnd-pairs (cadr expr)))
-		(if (null? cnd-pairs)
-			(on-err "Cond has no cases." calls spos)
-			(let* ((cnd-pair (car cnd-pairs))
-						 (cnd (car cnd-pair))
-						 (rslt (cadr cnd-pair)))
-				(let/cc
-					exit
-					(define (on-cond-scs cnd-val cond-env cond-calls cond-spos)
-						(if cnd-val
+(define (ruse-eval-cond in-expr in-env in-calls in-spos on-scs on-fail on-err)
+	(define (evaluate val env calls spos)
+		(let eval-cond ((cnd-pairs val))
+			(if (null? cnd-pairs)
+				(on-err "Cond has no cases." calls spos)
+				(let* ((cnd-pair (car cnd-pairs))
+							 (cnd (car cnd-pair))
+							 (rslt (cadr cnd-pair)))
+					(let/cc
+						exit
+						(define (on-cond-scs cnd-val cond-env cond-calls cond-spos)
+							(if cnd-val
+								(ruse-eval rslt env calls spos on-scs on-err)
+								(eval-cond (cdr cnd-pairs)))
+							(exit))
+						(if (eq? cnd 'else)
 							(ruse-eval rslt env calls spos on-scs on-err)
-							(eval-cond (cdr cnd-pairs)))
-						(exit))
-					(if (eq? cnd 'else)
-						(ruse-eval rslt env calls spos on-scs on-err)
-						(ruse-eval cnd env calls spos on-cond-scs on-err)))))))
+							(ruse-eval cnd env calls spos on-cond-scs on-err)))))))
+	(ruse-eval (cadr in-expr) in-env in-calls in-spos evaluate on-err))
 
 ; Pattern matching.
 (define (effective-val val) (if (source? val) (source-form val) val))
