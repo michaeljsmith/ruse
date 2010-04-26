@@ -46,14 +46,14 @@
 (define (ruse-global-env bdng)
 	(set! global-env (cons bdng global-env)))
 (define (ruse-global-rule ptn bd)
-	(ruse-global-env `(rule (,ptn . ,bd) ,global-env (<builtin> 1 1) ())))
+	(ruse-global-env `(rule (,ptn . ,bd) ,global-env (<builtin> (1 1) ()) ())))
 (define (ruse-global-macro ptn bd)
-	(ruse-global-env `(macro (,ptn . ,bd) ,global-env (<builtin> 1 1) ())))
+	(ruse-global-env `(macro (,ptn . ,bd) ,global-env (<builtin> (1 1) ()) ())))
 
 ; Initialize the environment.
 (define global-env '())
 (ruse-global-rule 'null (quote '()))
-(ruse-global-macro '(scope @fm) '(_scope fm))
+(ruse-global-macro '(scope @fm) '(_scope (quote fm)))
 (ruse-global-macro '(cond . @args) '(_cond args))
 (ruse-global-macro '(= . @args) '(_= args))
 (ruse-global-macro '(=* . @args) '(_=* args))
@@ -112,7 +112,7 @@
 	(define (check-quote hdr expr env calls spos on-scs)
 		(if (eqv? hdr 'quote)
 			(let* ((quote-stx (cadr expr))
-						 (val (if (source? quote-stx) (source->datum quote-stx) quote-stx)))
+						 (val quote-stx))
 				(on-scs val env calls spos))
 			(check-quasiquote hdr expr env calls spos on-scs)))
 
@@ -348,10 +348,12 @@
 				(on-scs bi-rslt env calls spos)))))
 
 ; Evaluate scope declaration.
-(define (ruse-eval-scope expr env calls spos on-scs on-fail on-err)
-	(let ((fm (cadr expr))
-				(scope-env (cons (make-scope-bdng (make-scope)) env)))
-		(ruse-eval fm scope-env calls spos on-scs on-err)))
+(define (ruse-eval-scope expr in-env in-calls in-spos on-scs on-fail on-err)
+	(define (evaluate val env calls spos)
+		(let ((fm val)
+					(scope-env (cons (make-scope-bdng (make-scope)) env)))
+			(ruse-eval fm scope-env calls spos on-scs on-err)))
+	(ruse-eval (cadr expr) in-env in-calls in-spos evaluate on-err))
 
 ; Evaluate conditional expression.
 (define (ruse-eval-cond expr env calls spos on-scs on-fail on-err)
