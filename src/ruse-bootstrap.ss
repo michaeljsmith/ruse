@@ -55,7 +55,7 @@
 (ruse-global-rule 'null (quote '()))
 (ruse-global-macro '(scope @fm) '(_scope (quote fm)))
 (ruse-global-macro '(cond . @args) '(_cond (quote args)))
-(ruse-global-macro '(= . @args) '(_= args))
+(ruse-global-macro '(= . @args) '(_= (quote args)))
 (ruse-global-macro '(=* . @args) '(_=* args))
 
 ; Source file definitions.
@@ -606,13 +606,15 @@
 		(set-box! top-scope (cons bdng (unbox top-scope)))))
 
 ; Evaluate a rule definition (add it to the environment).
-(define (ruse-eval-rule-def expr env calls spos on-scs on-fail on-err)
-	(let ((rl-tpl (compile-rule-def (cadr expr))))
-		(if rl-tpl
-			(let ((rl (list rl-tpl env spos)))
-				(ruse-add-to-current-scope (cons 'rule rl) env calls spos on-err)
-				(on-scs 'rule-def env calls spos))
-			(on-fail calls spos))))
+(define (ruse-eval-rule-def in-expr in-env in-calls in-spos on-scs on-fail on-err)
+	(define (evaluate val env calls spos)
+		(let ((rl-tpl (compile-rule-def val)))
+			(if rl-tpl
+				(let ((rl (list rl-tpl env spos)))
+					(ruse-add-to-current-scope (cons 'rule rl) env calls spos on-err)
+					(on-scs 'rule-def env calls spos))
+				(on-fail calls spos))))
+	(ruse-eval (cadr in-expr) in-env in-calls in-spos evaluate on-err))
 
 ; Evaluate a macro definition (add it to the environment).
 (define (ruse-eval-macro-def expr env calls spos on-scs on-fail on-err)
