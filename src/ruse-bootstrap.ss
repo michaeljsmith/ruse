@@ -57,7 +57,7 @@
 (ruse-global-macro '(scope @fm) '(_scope fm))
 (ruse-global-macro '(cond . @args) '(_cond args))
 (ruse-global-macro '(= . @args) '(_= args))
-(ruse-global-macro '(=* . @args) '(_=* . args))
+(ruse-global-macro '(=* . @args) '(_=* args))
 
 ; Source file definitions.
 (define (source? x) (and (vector? x) (eqv? (vector-ref x 0) '*source)))
@@ -619,7 +619,7 @@
 
 ; Evaluate a macro definition (add it to the environment).
 (define (ruse-eval-macro-def expr env calls spos on-scs on-fail on-err)
-	(let ((mac-tpl (compile-macro-def (cdr expr))))
+	(let ((mac-tpl (compile-macro-def (cadr expr))))
 		(if mac-tpl
 			(let ((mac (list mac-tpl env spos)))
 				(ruse-add-to-current-scope (cons 'macro mac) env calls spos on-err)
