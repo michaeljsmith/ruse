@@ -53,6 +53,19 @@
 ; Initialize the environment.
 (define global-env '())
 (ruse-global-rule 'null (quote '()))
+(ruse-global-macro '(eval @fm) '(_eval fm))
+(ruse-global-macro '(scope @fm) '(_scope fm))
+(ruse-global-macro '(cond . @args) '(_cond . args))
+(ruse-global-macro '(= . @args) '(_= . args))
+(ruse-global-macro '(=* . @args) '(_=* . args))
+
+;(ruse-global-rule 'null (quote '()))
+;(ruse-global-rule 'tag '(quote tag))
+;(ruse-global-rule '(tag @t1 @v) '(builtin list t1 v))
+;(ruse-global-rule 'multiply-int '(quote multiply-int))
+;(ruse-global-rule 'int '(quote int))
+;(ruse-global-rule '(int  @x) '(tag int x))
+;(ruse-global-rule '(multiply-int @x @y) '(int (builtin * x y)))
 
 ; Source file definitions.
 (define (source? x) (and (vector? x) (eqv? (vector-ref x 0) '*source)))
@@ -257,19 +270,19 @@
 			((eqv? hdr 'builtin)
 			 (ruse-eval-builtin expr env calls spos on-scs on-fail on-err))
 			; Handle requests to evaluate dynamic form.
-			((eqv? hdr 'eval)
+			((eqv? hdr '_eval)
 			 (ruse-eval-eval expr env calls spos on-scs on-fail on-err))
 			; Handle requests to evaluate in a sub-scope.
-			((eqv? hdr 'scope)
+			((eqv? hdr '_scope)
 			 (ruse-eval-scope expr env calls spos on-scs on-fail on-err))
 			; Handle conditional requests.
-			((eqv? hdr 'cond)
+			((eqv? hdr '_cond)
 			 (ruse-eval-cond expr env calls spos on-scs on-fail on-err))
 			; Handle rule definitions.
-			((eqv? hdr '=)
+			((eqv? hdr '_=)
 			 (ruse-eval-rule-def expr env calls spos on-scs on-fail on-err))
 			; Handle macro definitions.
-			((eqv? hdr '=*)
+			((eqv? hdr '_=*)
 			 (ruse-eval-macro-def expr env calls spos on-scs on-fail on-err))
 			; Handle integer literals by returning them as is.
 			((integer? expr) (on-scs expr env calls spos))
