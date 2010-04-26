@@ -53,6 +53,7 @@
 ; Initialize the environment.
 (define global-env '())
 (ruse-global-rule 'null (quote '()))
+(ruse-global-macro '(builtin . @fm) '(_builtin (quote fm)))
 (ruse-global-macro '(scope @fm) '(_scope (quote fm)))
 (ruse-global-macro '(cond . @args) '(_cond (quote args)))
 (ruse-global-macro '(= . @args) '(_= (quote args)))
@@ -264,7 +265,7 @@
 		; Check whether the expression is a rule definition.
 		(cond
 			; Handle requests to evaluate form as a scheme form.
-			((eqv? hdr 'builtin)
+			((eqv? hdr '_builtin)
 			 (ruse-eval-builtin expr env calls spos on-scs on-fail on-err))
 			; Handle requests to evaluate in a sub-scope.
 			((eqv? hdr '_scope)
@@ -332,20 +333,22 @@
 ; Evaluate using Scheme.
 (define-namespace-anchor ns-anchor)
 (define eval-ns (namespace-anchor->namespace ns-anchor))
-(define (ruse-eval-builtin expr env calls spos on-scs on-fail on-err)
-	(let ((fm (cdr expr)))
-		(define (eval-arg arg)
-			(list
-				'quote
-				(let/cc
-					arg-done
-					(define (on-arg-scs val new-env new-calls new-spos)
-						(arg-done val))
-					(ruse-eval arg env calls spos on-arg-scs on-err))))
-		(let* ((val-fm (map eval-arg (cdr fm)))
-					 (bi-expr (cons (source->datum (car fm)) val-fm)))
-			(let ((bi-rslt (eval bi-expr eval-ns)))
-				(on-scs bi-rslt env calls spos)))))
+(define (ruse-eval-builtin in-expr in-env in-calls in-spos on-scs on-fail on-err)
+	(define (evaluate val env calls spos)
+		(let ((fm val))
+			(define (eval-arg arg)
+				(list
+					'quote
+					(let/cc
+						arg-done
+						(define (on-arg-scs val new-env new-calls new-spos)
+							(arg-done val))
+						(ruse-eval arg env calls spos on-arg-scs on-err))))
+			(let* ((val-fm (map eval-arg (cdr fm)))
+						 (bi-expr (cons (source->datum (car fm)) val-fm)))
+				(let ((bi-rslt (eval bi-expr eval-ns)))
+					(on-scs bi-rslt env calls spos)))))
+	(ruse-eval (cadr in-expr) in-env in-calls in-spos evaluate on-err))
 
 ; Evaluate scope declaration.
 (define (ruse-eval-scope expr in-env in-calls in-spos on-scs on-fail on-err)
