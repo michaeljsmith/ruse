@@ -56,7 +56,7 @@
 (ruse-global-macro '(eval @fm) '(_eval fm))
 (ruse-global-macro '(scope @fm) '(_scope fm))
 (ruse-global-macro '(cond . @args) '(_cond args))
-(ruse-global-macro '(= . @args) '(_= . args))
+(ruse-global-macro '(= . @args) '(_= args))
 (ruse-global-macro '(=* . @args) '(_=* . args))
 
 ; Source file definitions.
@@ -610,7 +610,7 @@
 
 ; Evaluate a rule definition (add it to the environment).
 (define (ruse-eval-rule-def expr env calls spos on-scs on-fail on-err)
-	(let ((rl-tpl (compile-rule-def (cdr expr))))
+	(let ((rl-tpl (compile-rule-def (cadr expr))))
 		(if rl-tpl
 			(let ((rl (list rl-tpl env spos)))
 				(ruse-add-to-current-scope (cons 'rule rl) env calls spos on-err)
